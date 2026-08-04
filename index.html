@@ -59,6 +59,21 @@
   #introOv .panel{max-height:94vh;overflow:auto;}
   /* במסך נמוך מוותרים על רשימת שמות העולמות — «יוצאים לדרך» חייב להיראות בלי גלילה */
   @media (max-height:800px){ .panel .worlds{display:none;} }
+  /* בטלפון אין מקלדת — הרמז «רווח לקפיצה» מיותר ותופס שורה יקרה */
+  #cq-root.touch .panel .keys{display:none;}
+  /* מסך צר: מכווצים את הפתיחה כדי שכל המסלול גיל ← «יוצאים לדרך» ייכנס בלי גלילה */
+  @media (max-width:560px){
+    .panel{padding:22px 20px 20px;gap:10px;}
+    .panel h1{font-size:27px;}
+    .panel p{font-size:15px;line-height:1.5;}
+    .subjRow{font-size:13px;gap:6px;}
+    .subjRow span{padding:4px 11px;}
+    .grades{gap:6px;}
+    .gradeBtn{font-size:16px;padding:8px 0;}
+    .bigbtn{font-size:19px;padding:12px 30px;}
+    #ageEcho{font-size:14px;}
+    #ageEcho .flavor{display:none;}
+  }
   .subjRow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;font-size:15px;font-weight:800;color:#1D2B45;}
   .subjRow span{background:#7C5CFF;color:#fff;border-radius:999px;padding:5px 15px;}
   .panel .stats{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:4px;}
@@ -867,6 +882,7 @@ window.addEventListener("keyup",e=>{
 /* touch */
 if("ontouchstart" in window){
   document.getElementById("touch").classList.add("on");
+  document.getElementById("cq-root").classList.add("touch");   // מסתיר את רמזי המקלדת
   const bind=(id,k)=>{const b=document.getElementById(id);
     b.addEventListener("pointerdown",e=>{e.preventDefault();ac();press(k);});
     b.addEventListener("pointerup",e=>{e.preventDefault();release(k);});
@@ -1006,9 +1022,10 @@ $("worldsRow").innerHTML=WORLDS.map((w,i)=>`<span>${w.emoji} ${w.name}</span>`).
 }
 function echoGrade(){
   const prev=Math.max(1,pickedGrade-1);
+  /* .flavor נחתך במסך צר — הפעולה («לא בכיתה X?») חייבת להישאר גלויה בטלפון */
   $("ageEcho").innerHTML=
-    `אתם בכיתה <b>${GRADE_HE[pickedGrade]}</b> — מתחילים בשאלות של כיתה <b>${GRADE_HE[prev]}</b>, `+
-    `קצת יותר קלות, וממשיכים לטפס 🚀 `+
+    `אתם בכיתה <b>${GRADE_HE[pickedGrade]}</b> — מתחילים בשאלות של כיתה <b>${GRADE_HE[prev]}</b>`+
+    `<span class="flavor">, קצת יותר קלות, וממשיכים לטפס 🚀</span> `+
     /* אנגלית נלמדת מכיתה ג' — עדיף לומר את זה מראש מאשר להשמיט עולמות בשקט */
     (pickedGrade<3?`<br><small>באנגלית עוד לא מתחילים בכיתה ${GRADE_HE[pickedGrade]} — `+
                    `נשחק בעברית ובמתמטיקה.</small> `:"")+
