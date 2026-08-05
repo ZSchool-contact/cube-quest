@@ -1000,7 +1000,18 @@ function resumeSession(sv){
   session.reportReady=session.threads.every(x=>x.done);
   initGame();
   state.candy=sv.candy||0; state.cubesTotal=sv.cubesTotal||0; state.stars=sv.stars||0;
-  loadWorld(Math.max(0,Math.min(sv.stageIdx||0,session.plan.length-1)));
+  /* עמידות לשינוי סדר העולמות (אוג' 2026: לשון הוקדמה לפני קריאה).
+     `stageIdx` הוא מיקום במסלול, ומצב השרשראות נשמר לפי מזהה — כך שאחרי
+     שינוי סדר, אינדקס ישן היה מחזיר ילד לעולם שכבר סיים ומדלג על עולם שלא
+     נבדק. לכן מחפשים את השלב הראשון שהשרשרת שלו טרם הושלמה, ונופלים
+     לאינדקס השמור רק אם אין כזה (מסלול שהסתיים). */
+  const saved=Math.max(0,Math.min(sv.stageIdx||0,session.plan.length-1));
+  const open=session.plan.findIndex(p=>{
+    if(!p.thread) return false;                  // עולם הבונוס אינו נמדד
+    const T=session.byId[p.thread];
+    return T && !T.done;                         // null = אין תוכן בכיתה הזאת
+  });
+  loadWorld(open>=0?open:saved);
   $("introOv").classList.add("hidden");
   state.running=true;
   const p=stageInfo();
