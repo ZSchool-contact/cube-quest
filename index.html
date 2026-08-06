@@ -235,6 +235,7 @@
       </div>
       <div id="authLoggedIn" class="hidden">
         <span id="authWho"></span>
+        <button type="button" class="linklike" id="myReportsBtn">📊 הדוחות שלי</button>
         <button type="button" class="linklike" id="authSignOut">התנתקות</button>
       </div>
     </div>
@@ -269,9 +270,11 @@
       <div class="stat"><b id="stTime">0:00</b><small>⏱ זמן</small></div>
     </div>
     <p id="winNote" style="font-size:14.5px;color:#5A6B7C;"></p>
+    <!-- אין כאן כפתור דוח בכוונה (החלטת שני, אוג' 2026): הילד שמשחק לא מקבל
+         פירוט/ציונים בשום מסך. הדוח המלא נשמר ל-Supabase (authPushFinished)
+         ונגיש רק להורה, דרך «הדוחות שלי» בתיבת ההתחברות — ראו showMyReports(). -->
     <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
       <button class="bigbtn" id="againBtn">עוד פעם!</button>
-      <button class="bigbtn" id="reportBtn" style="display:none;background:#2EC4B6;box-shadow:0 6px 0 #1E8F86;">📥 דוח מיפוי</button>
     </div>
   </div>
 </div>
@@ -417,19 +420,27 @@ async function authPushSave(o){
   }catch(e){}
 }
 async function authPushFinished(rep){
-  /* נקרא בכל סיום מסלול (גם אם ההורה לא פותח את מסך הדוח) כדי שהמדידה
-     תגיע לאדמין תמיד. rep נשלח כפרמטר לפונקציית RPC (submit_report) שכותבת
-     ל-reports בלבד — הוא **לא** נכתב לשום עמודה שההורה יכול לקרוא ממנה
-     בחזרה (ראו schema.sql §4). אידמפוטנטי מבחינת status: קריאה חוזרת אחרי
-     שה-run כבר finished פשוט מוסיפה שורת reports נוספת — לא קורה בפועל כי
-     completeStage קורא לכאן פעם אחת, אבל לא הרסני אם כן. */
+  /* נקרא ברגע שהמיפוי האמיתי נגמר (לפני עולם הבונוס, ראו completeStage) —
+     בלי תלות בילד שפותח מסך כלשהו. rep נשלח כפרמטר לפונקציית RPC
+     (submit_report), שהיא הדרך היחידה שמידע נכתב ל-reports — ה-client
+     לעולם לא כותב לטבלה ישירות (ראו schema.sql §4). ההורה כן יכול לקרוא
+     את זה בחזרה עכשיו (reports_parent_read), אבל רק לקרוא — לא לכתוב.
+     אידמפוטנטי-ברובו: קריאה חוזרת מוסיפה שורת reports נוספת (לא upsert),
+     ולכן שני הניסיונות למטה לא רצים במקביל — הראשון חייב להיכשל לפני השני.
+     שני ניסיונות ולא יותר: כדי ש"הדוח של כל תלמיד יישמר" לא ייפול על כשל
+     רשת חד-פעמי, בלי לתלות את חוויית המשחק אם הרשת באמת למטה. גם בלי
+     submit_report מוצלח, היומן הגולמי כבר ב-game_runs (saveProgress בכל
+     עולם) — שום דבר לא אבד, רק הדוח המחושב חסר עד שינוי-חוזר. */
   if(!sb||!authUser||!session) return;
-  try{
-    if(!authRunId) await authPushSave(buildSaveObj());
-    if(!authRunId) return;
-    const {error}=await sb.rpc("submit_report",{p_run_id:authRunId,p_report:rep});
-    if(error) throw error;
-  }catch(e){}
+  if(!authRunId) await authPushSave(buildSaveObj());
+  if(!authRunId) return;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const {error}=await sb.rpc("submit_report",{p_run_id:authRunId,p_report:rep});
+      if(!error) return;
+    }catch(e){}
+    if(attempt===0) await new Promise(r=>setTimeout(r,2000));
+  }
 }
 async function authPullLatest(){
   if(!sb||!authUser) return;
@@ -496,6 +507,7 @@ async function authInit(){
     if(authUser) authPullLatest();
   };
   $("authSignOut").onclick=async()=>{ try{ await sb.auth.signOut(); }catch(e){} };
+  $("myReportsBtn").onclick=()=>showMyReports();
 }
 
 /* ---------- RTL math (הועתק מ-demo_template.html) ---------- */
@@ -928,13 +940,17 @@ function buildReport(){
     stars:{collected:session.stars, of:session.starsTotal},
     subjects_not_taught:skipped,
     probe:session.probe?{thread:session.probe.cfg.id, name:session.probe.cfg.name,
+      emoji:session.probe.cfg.emoji,
       questions_asked:session.probe.asked, correct:session.probe.correct,
       passed:session.probe.passed, checked_grade:session.probe.nodes[session.probe.idx].grade,
       checked_tag:session.probe.nodes[session.probe.idx].tag,
       level:session.probe.level, items:session.probe.items}:null,
+    /* emoji/above_ceiling נוספו כאן (לא רק ב-live session.threads) כדי שהדוח
+       השמור ב-reports יהיה עצמאי לגמרי — showMyReports() מציג אותו הרבה אחרי
+       שה-session המקורי כבר לא קיים, בלי שום תלות בזיכרון של אותה הרצה. */
     knowledge_state:session.threads.map(T=>({thread:T.result.thread, name:T.result.name,
-      subject:T.cfg.subject, subject_he:T.cfg.subject_he,
-      assessed:T.result.nodes.some(n=>n.measured),
+      emoji:T.cfg.emoji, subject:T.cfg.subject, subject_he:T.cfg.subject_he,
+      assessed:T.result.nodes.some(n=>n.measured), above_ceiling:T.result.above_ceiling,
       score:T.result.score, questions_asked:T.result.questions_asked,
       start_grade:rungNode(T,T.startRung).grade, start_tag:rungNode(T,T.startRung).tag,
       start_level:rungLevel(T.startRung),
@@ -1523,41 +1539,59 @@ $("startBtn").onclick=()=>{
 /* ---------- דוח המיפוי ---------- */
 const STATUS_HE={advanced:"שליטה מתקדמת",core:"שליטה בליבה",basic:"שליטה בסיסית",
                  below_basic:"עדיין לא בבסיס",not_assessed:"לא נבדק"};
-$("reportBtn").onclick=()=>showReport();
 $("repClose").onclick=()=>{ $("repOv").classList.add("hidden"); };
-function showReport(){
-  const rep=buildReport();
+/* «הדוחות שלי» — הדרך היחידה שדוח מגיע למישהו עכשיו (החלטת שני, אוג' 2026):
+   רק ההורה, רק אחרי כניסה, ולא הילד ולא ברגע הסיום. שולף מ-reports דרך
+   ה-policy reports_parent_read (parent_id=auth.uid() — ראו schema.sql §4).
+   v1: מציג את הדוח **האחרון** בלבד — משפחה עם כמה הרצות/ילדים היא הרחבה
+   עתידית, לא נבנתה כאן. */
+async function showMyReports(){
+  if(!sb||!authUser) return;
+  try{
+    const {data,error}=await sb.from("reports").select("report")
+      .eq("parent_id",authUser.id).order("created_at",{ascending:false}).limit(1);
+    if(error) throw error;
+    if(!data||!data.length){ showToast("עדיין אין דוח שמור — צריך לסיים מיפוי קודם 🗺️",3000); return; }
+    showReport(data[0].report);
+  }catch(e){ showToast("לא הצלחנו לטעון את הדוח — לנסות שוב עוד רגע",3000); }
+}
+/* showReport(rep): מציג דוח. בלי ארגומנט — בונה מה-session החי (נשאר לצורך
+   תאימות, למשל טסטים שקוראים לה ישירות). עם ארגומנט — מציג דוח **שמור**
+   שנשלף מ-Supabase (showMyReports), הרבה אחרי שה-session המקורי נעלם.
+   בגלל זה כל מה שהפונקציה קוראת חייב לבוא מ-rep עצמו, לא מ-session/T
+   החיים — ראו ההערה ב-buildReport() על emoji/above_ceiling. */
+function showReport(repArg){
+  const rep=repArg||buildReport();
   const mm=Math.floor(rep.total_seconds/60), ss=rep.total_seconds%60;
   $("repSub").innerHTML=`כיתה <b>${GRADE_HE[rep.student.grade]}</b> · ${rep.questions_asked} שאלות · `+
     `${mm}:${String(ss).padStart(2,"0")} דקות · ⭐ ${rep.stars.collected}/${rep.stars.of}`;
-  const cardOf=T=>{
-    const r=T.result;
-    const nodes=r.nodes.slice().reverse().map(n=>
+  const cardOf=k=>{
+    const nodes=k.topics.slice().reverse().map(n=>
       `<div class="repNode ${n.status}"><span class="dot"></span>`+
       `<span>${n.tag} · ${n.label}</span>`+
       `<span class="st">${STATUS_HE[n.status]}</span>`+
       `<span class="inf">${n.measured?"נמדד":"הוסק"}</span></div>`).join("");
     /* שרשרת שלא נמדדה בה אף מדרגה (למשל: נגמרו השאלות במאגר) — «לא נבדק»
        ולא ציון 0, שנקרא כאילו התלמיד נכשל בכול. */
-    const measured=r.nodes.some(n=>n.measured);
-    /* **אין ציון מספרי במסך של הילד** (החלטת שני, אוג' 2026). הציון מנורמל
-       לתקרת הכיתה של התלמיד, כך שילד כיתה ה׳ ברמת כיתה ג׳ קיבל ~60 והדבר
-       סתר את עקרון הכישלון הרך שכל המשחק בנוי עליו. `r.score` נשאר בקובץ
-       המיוצא לצורך הדוח למבוגרים — ראו PROJECT-OVERVIEW §6.6. */
+    const measured=k.assessed;
+    /* אין ציון מספרי בכרטיס (החלטת שני, אוג' 2026, מוחמר עכשיו לכל הדוח —
+       הילד לא רואה את המסך הזה בכלל יותר, רק ההורה מתוך «הדוחות שלי»).
+       הציון מנורמל לתקרת הכיתה, ולכן `k.score` לא מוצג כאן, רק בקובץ
+       המיוצא ל-reports (לצורך שיבוץ אדמין) — ראו PROJECT-OVERVIEW §6.6. */
     const score=measured?"":`<span class="repScore" style="font-size:15px;color:#8A98A6;">לא נבדק</span>`;
-    /* עבר את שאלת הבונוס מעל תקרת כיתתו — נאמר לילד, כי זו הצלחה אמיתית.
-       ניסוח זהיר בכוונה: «יש שם עוד», לא «אתה ברמת כיתה X» — תצפית אחת. */
-    const bonus=r.above_ceiling
+    /* עבר את שאלת הבונוס מעל תקרת כיתתו — ניסוח זהיר בכוונה: «יש שם עוד»,
+       לא «אתה ברמת כיתה X» — תצפית אחת. */
+    const bonus=k.above_ceiling
       ? `<div class="repNode advanced"><span class="dot"></span>`+
-        `<span>⭐ ענית נכון גם על שאלת הבונוס — מעל מה שנלמד בכיתה שלך!</span></div>` : "";
-    return `<div class="repThread"><div class="repHead"><b>${T.cfg.emoji||""} ${r.name}</b>`+
+        `<span>⭐ ענה/תה נכון גם על שאלת הבונוס — מעל מה שנלמד בכיתה!</span></div>` : "";
+    return `<div class="repThread"><div class="repHead"><b>${k.emoji||""} ${k.name}</b>`+
            `${score}</div>${measured?bonus+nodes:'<div style="font-size:13px;color:#5A6B7C;">לא הספקנו לבדוק את הנושא הזה במפגש.</div>'}</div>`;
   };
   /* מקובץ לפי מקצוע, בסדר המשחק: עברית → מתמטיקה → אנגלית */
   const SUBJ_ORDER=["hebrew","math","english"];
   const SUBJ_NAME={hebrew:"עברית",math:"מתמטיקה",english:"אנגלית"};
   const threads=SUBJ_ORDER.map(sub=>{
-    const list=session.threads.filter(T=>T.cfg.subject===sub);
+    const list=rep.knowledge_state.filter(k=>k.subject===sub);
     if(!list.length){
       /* מקצוע שלא נבדק כלל — נאמר את זה מפורשות ולא נשמיט אותו מהדוח */
       return `<div class="repSubj">${SUBJ_EMOJI[sub]} ${SUBJ_NAME[sub]}</div>`+
@@ -1575,7 +1609,7 @@ function showReport(){
     : `<p style="font-size:14px;color:#5A6B7C;">לא אובחנו שגיאות תפיסתיות ספציפיות.</p>`;
   const P=rep.probe;
   const probeCard=!P?"":`<div class="repThread" style="border-style:dashed;">
-      <div class="repHead"><b>${session.probe.cfg.emoji||""} ${P.name}</b>
+      <div class="repHead"><b>${P.emoji||""} ${P.name}</b>
         <span style="font-size:13px;color:#5A6B7C;">בדיקה קצרה · ${P.questions_asked} שאלות</span></div>
       <div class="repNode ${P.questions_asked===0?"not_assessed":P.passed?"core":"below_basic"}">
         <span class="dot"></span>
@@ -1946,7 +1980,7 @@ function completeStage(){
     $("winTitle").textContent="🏆 כל הכבוד!";
     $("winSub").textContent=`עברתם את כל ${plan.length} העולמות והגעתם עד הסוף!`;
     $("againBtn").textContent="עוד פעם מההתחלה!";
-    if(session){ $("reportBtn").style.display=""; authPushFinished(buildReport()); clearProgress(); }
+    if(session){ clearProgress(); }
   }else{
     const nw=WORLDS[nxt.w];
     if(nxt.subjectHe&&nxt.subjectHe!==cur.subjectHe){
@@ -1958,7 +1992,10 @@ function completeStage(){
       $("winTitle").textContent="🎯 סיימנו את המיפוי!";
       $("winSub").innerHTML=`מכאן זה פרס: <b>${nw.name}</b> ${nw.emoji} — עולם בלי שאלות, רק אתגר קפיצה.`;
       $("againBtn").textContent=`לעולם הבונוס ${nw.emoji}`;
-      if(session) $("reportBtn").style.display="";
+      /* המיפוי האמיתי נגמר כאן — דוחפים את הדוח עכשיו, לא מחכים לעולם הבונוס.
+         ילד לא תמיד ממשיך לשחק בו, ואז הדוח לא היה נשמר בכלל (החלטת שני:
+         "הדוח של כל תלמיד ישמר במערכת" — צריך לקרות גם אם הבונוס לא נגמר). */
+      if(session) authPushFinished(buildReport());
     }else{
       $("winTitle").textContent=`${W.emoji} עולם ${state.stageIdx+1} הושלם!`;
       $("winSub").textContent=`ממשיכים אל ${nw.name} ${nw.emoji} — הגשרים שם צריכים יותר קוביות!`;
