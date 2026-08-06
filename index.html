@@ -600,7 +600,13 @@ async function authInit(){
         if(error) throw error;
         authSetErr("נכנסתם 🎉","ok");
       }else{
-        const {data,error}=await sb.auth.signUp({email:c.email,password:c.pass});
+        /* emailRedirectTo מפורש: בלעדיו Supabase מחזיר את ההורה ל-Site URL
+           של הפרויקט, ואם הוא לא כולל את /cube-quest/ — הקישור מהמייל נוחת
+           על שגיאת 404 של GitHub ("דף ריק"). קרה בפועל, 6.8.26. הכתובת
+           חייבת להיות גם ברשימת Redirect URLs, אחרת Supabase מתעלם ממנה
+           וחוזר ל-Site URL. */
+        const {data,error}=await sb.auth.signUp({email:c.email,password:c.pass,
+          options:{emailRedirectTo:location.origin+location.pathname}});
         if(error) throw error;
         /* מייל שכבר רשום אינו מחזיר שגיאה (Supabase מסתיר קיום חשבונות),
            אלא user עם identities ריק. בלי הבדיקה הזאת ההורה מקבל "בדקו את
