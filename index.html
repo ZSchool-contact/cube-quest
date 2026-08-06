@@ -152,8 +152,20 @@
   .authBtns button{font:inherit;font-size:14px;font-weight:700;border-radius:10px;border:2px solid #E3D9C4;
         background:#FFFDF6;color:#1D2B45;padding:8px 14px;cursor:pointer;}
   .authBtns button:hover{border-color:#7C5CFF;}
-  #authErr,#authErr2{font-size:13px;color:#D64545;min-height:16px;}
-  #authBox.hidden,#authLoggedOut.hidden,#authNeedsProfile.hidden,#authLoggedIn.hidden,#playGate.hidden{display:none;}
+  /* הודעה טובה לא נצבעת אדום: "נרשמתם! בדקו את המייל" הוצגה קודם באותו
+     אדום של שגיאה, ולכן נקראה ככישלון. הצבע נקבע לפי .ok/.err/.info. */
+  #authErr,#authErr2,#authErr3{font-size:13px;min-height:16px;color:#D64545;line-height:1.45;}
+  #authErr.ok,#authErr2.ok,#authErr3.ok{color:#1A7F4B;}
+  #authErr.info,#authErr2.info,#authErr3.info{color:#3A4A66;}
+  .authBox h2{font-size:19px;margin:0;color:#1D2B45;}
+  #authLead,#authRecLead{font-size:13.5px;color:#5A6B7C;margin:0 0 2px;}
+  .authBtns button.authPrimary{background:#7C5CFF;border-color:#6B4BE0;color:#fff;}
+  .authBtns button.authPrimary:hover{background:#6B4BE0;}
+  .authBtns button.authPrimary:disabled{opacity:.55;cursor:default;}
+  .authSwitchRow{font-size:13px;color:#5A6B7C;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;}
+  .authSwitchRow .linklike{font-size:13px;padding:0;}
+  #authBox.hidden,#authLoggedOut.hidden,#authNeedsProfile.hidden,#authLoggedIn.hidden,
+  #authRecovery.hidden,#authForgot.hidden,#playGate.hidden{display:none;}
   #authWho{font-size:14px;color:#3A4A66;}
   #authLoggedIn{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   /* ---------- report ---------- */
@@ -210,15 +222,33 @@
     </div>
     <div class="authBox hidden" id="authBox">
       <div id="authLoggedOut">
-        <p style="font-size:13.5px;color:#5A6B7C;margin:0 0 4px;">כדי לשחק, קודם מתחברים — <b>בתור ההורה/ה</b>,
-          לא בתור הילד/ה. כך אפשר לעקוב אחרי ההתקדמות ולהמשיך ממכשיר אחר.</p>
+        <!-- מצב אחד בכל רגע (הרשמה או כניסה), עם כותרת שאומרת מה עומד לקרות.
+             שני כפתורים שווים בלי כותרת השאירו את ההורה בלי דרך לדעת אם נוצר
+             חשבון או לא — ראו הערת authMode ב-JS. -->
+        <h2 id="authTitle">יצירת חשבון להורה</h2>
+        <p id="authLead"></p>
         <input type="email" id="authEmail" placeholder="אימייל" autocomplete="email">
-        <input type="password" id="authPass" placeholder="סיסמה" autocomplete="current-password">
+        <input type="password" id="authPass" placeholder="סיסמה (לפחות 6 תווים)" autocomplete="new-password">
         <div class="authBtns">
-          <button type="button" id="authSignIn">כניסה</button>
-          <button type="button" id="authSignUp">הרשמה</button>
+          <button type="button" id="authGo" class="authPrimary">יצירת חשבון</button>
+          <button type="button" class="linklike hidden" id="authForgot">שכחתי סיסמה</button>
         </div>
         <div id="authErr"></div>
+        <div class="authSwitchRow">
+          <span id="authSwitchQ"></span>
+          <button type="button" class="linklike" id="authSwitch"></button>
+        </div>
+      </div>
+      <div id="authRecovery" class="hidden">
+        <!-- הקישור מהמייל פותח כאן טופס אמיתי. פתיחת הקישור לבדה אינה מחליפה
+             סיסמה — זו בדיוק התקלה שקרתה מול הדשבורד (SESSION-SUMMARY §5). -->
+        <h2>בחירת סיסמה חדשה</h2>
+        <p id="authRecLead"></p>
+        <input type="password" id="authNewPass" placeholder="סיסמה חדשה (לפחות 6 תווים)" autocomplete="new-password">
+        <div class="authBtns">
+          <button type="button" id="authSetPass" class="authPrimary">שמירת הסיסמה</button>
+        </div>
+        <div id="authErr3"></div>
       </div>
       <div id="authNeedsProfile" class="hidden">
         <p style="font-size:13.5px;color:#5A6B7C;margin:0 0 4px;">כמעט סיימנו — עוד פרט אחד:</p>
@@ -344,8 +374,72 @@ const sb=(SUPABASE_CONFIG&&window.supabase)
   :null;
 let authUser=null, authStudentId=null, authRunId=null;
 
-function authSetErr(msg){ const e=$("authErr"); if(e) e.textContent=msg||""; }
-function authSetErr2(msg){ const e=$("authErr2"); if(e) e.textContent=msg||""; }
+function authSay(id,msg,kind){ const e=$(id); if(!e) return;
+  e.textContent=msg||""; e.className=msg?(kind||"err"):""; }
+function authSetErr(msg,kind){ authSay("authErr",msg,kind); }
+function authSetErr2(msg,kind){ authSay("authErr2",msg,kind); }
+function authSetErr3(msg,kind){ authSay("authErr3",msg,kind); }
+
+/* Supabase מחזיר סיבה מדויקת לכל כישלון, והיא נבלעה קודם והוחלפה במשפט
+   אחד ("לבדוק אימייל/סיסמה"). אותו טקסט תיאר סיסמה קצרה, מייל שלא אושר,
+   חשבון שכבר קיים ומכסת מיילים שנגמרה — ארבע פעולות שונות לגמרי מצד
+   ההורה, ואף אחת מהן לא "לבדוק את הסיסמה". */
+function authErrText(e){
+  const code=(e&&(e.code||e.error_code))||"";
+  const msg=String((e&&e.message)||"");
+  const has=s=>msg.toLowerCase().includes(s);
+  if(code==="invalid_credentials"||has("invalid login"))
+    return "אימייל או סיסמה לא נכונים. אם שכחתם — לחצו «שכחתי סיסמה».";
+  if(code==="email_not_confirmed"||has("email not confirmed"))
+    return "החשבון קיים, אבל המייל עדיין לא אושר. חפשו את מייל האישור (גם בתיקיית הספאם) ולחצו על הקישור שבו.";
+  if(code==="user_already_exists"||has("already registered"))
+    return "האימייל הזה כבר רשום. עברו ל«כניסה» עם הסיסמה שבחרתם.";
+  if(code==="weak_password"||has("at least 6")||has("password should be"))
+    return "הסיסמה קצרה מדי — צריך לפחות 6 תווים.";
+  if(code==="over_email_send_rate_limit"||has("rate limit")||(e&&e.status===429))
+    return "נשלחו יותר מדי מיילים בזמן קצר. המתינו כשעה ונסו שוב.";
+  if(code==="validation_failed"||has("invalid email"))
+    return "כתובת האימייל לא תקינה.";
+  return msg?("לא הצלחנו — "+msg):"משהו השתבש. נסו שוב בעוד רגע.";
+}
+
+/* מצב אחד בכל רגע. שני כפתורים שווים ("כניסה" / "הרשמה") מתחת לאותו טופס
+   לא אמרו להורה מה עומד לקרות ולא מה קרה — ולכן גם לא אם נוצר חשבון. */
+let authMode="signup", authRecovering=false;
+const AUTH_MODE_UI={
+  signup:{title:"יצירת חשבון להורה",
+    lead:"החשבון נפתח על שם ההורה, לא על שם הילד/ה — הוא מה ששומר את ההתקדמות ומאפשר להמשיך ממכשיר אחר.",
+    go:"יצירת חשבון", q:"כבר יש לכם חשבון?", sw:"לכניסה",
+    ac:"new-password", ph:"סיסמה (לפחות 6 תווים)"},
+  signin:{title:"כניסה לחשבון קיים",
+    lead:"נכנסים עם האימייל והסיסמה של ההורה.",
+    go:"כניסה", q:"עדיין אין לכם חשבון?", sw:"ליצירת חשבון",
+    ac:"current-password", ph:"סיסמה"}
+};
+function authSetMode(m){
+  authMode=m; const u=AUTH_MODE_UI[m];
+  $("authTitle").textContent=u.title;
+  $("authLead").textContent=u.lead;
+  $("authGo").textContent=u.go;
+  $("authSwitchQ").textContent=u.q;
+  $("authSwitch").textContent=u.sw;
+  $("authPass").setAttribute("autocomplete",u.ac);
+  $("authPass").placeholder=u.ph;
+  $("authForgot").classList.toggle("hidden",m!=="signin");
+  authSetErr("");
+}
+function authBusy(on,label){
+  const b=$("authGo"); if(!b) return;
+  b.disabled=!!on; b.textContent=on?label:AUTH_MODE_UI[authMode].go;
+}
+function authCreds(){
+  const email=$("authEmail").value.trim(), pass=$("authPass").value;
+  if(!email){ authSetErr("צריך למלא אימייל."); return null; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ authSetErr("כתובת האימייל לא תקינה."); return null; }
+  if(!pass){ authSetErr("צריך למלא סיסמה."); return null; }
+  if(authMode==="signup"&&pass.length<6){ authSetErr("הסיסמה קצרה מדי — צריך לפחות 6 תווים."); return null; }
+  return {email:email,pass:pass};
+}
 /* פרופיל "מוכן" = יש students וגם profiles.consent_given — נבדק מול ה-DB
    בכל פעם (לא נשען על משתנה זיכרון), כדי שזרימת אימות מייל תעבוד נכון:
    מי שנרשם, אישר במייל בטאב/מכשיר אחר וחזר — מגיע הנה עם authUser טרי
@@ -362,6 +456,19 @@ async function authProfileReady(){
 }
 async function authRefreshGate(){
   if(!sb) return;                 // בלי קונפיג: playGate נשאר פתוח כברירת מחדל (HTML), כמו היום
+  /* איפוס סיסמה קודם לכל: הקישור מהמייל יוצר session אמיתי, ולכן בלי
+     הענף הזה ההורה היה נוחת ישר במשחק — והסיסמה שלא ידע נשארת מה שהיא. */
+  if(authRecovering&&authUser){
+    $("authLoggedOut").classList.add("hidden");
+    $("authNeedsProfile").classList.add("hidden");
+    $("authLoggedIn").classList.add("hidden");
+    $("authRecovery").classList.remove("hidden");
+    $("playGate").classList.add("hidden");
+    $("authRecLead").textContent="בחרו סיסמה חדשה לחשבון "+(authUser.email||"")+
+      ". עד שתשמרו אותה כאן — הסיסמה לא באמת השתנתה.";
+    return;
+  }
+  $("authRecovery").classList.add("hidden");
   if(!authUser){
     $("authLoggedOut").classList.remove("hidden");
     $("authNeedsProfile").classList.add("hidden");
@@ -461,36 +568,83 @@ async function authPullLatest(){
 }
 async function authInit(){
   if(!sb) return;
+  /* זיהוי קישור-האיפוס מה-URL עצמו ולא רק מאירוע PASSWORD_RECOVERY:
+     supabase-js עשוי לצרוך את ה-hash לפני שהמאזין נרשם, ואז האירוע חומק. */
+  try{
+    const h=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
+    if(h.get("type")==="recovery") authRecovering=true;
+  }catch(e){}
   try{
     const {data:{session:s}}=await sb.auth.getSession();
     authUser=s?s.user:null;
   }catch(e){}
+  authSetMode("signup");
   await authRefreshGate();
-  if(authUser) authPullLatest();
-  sb.auth.onAuthStateChange(async(_ev,s)=>{
+  if(authUser&&!authRecovering) authPullLatest();
+  sb.auth.onAuthStateChange(async(ev,s)=>{
+    if(ev==="PASSWORD_RECOVERY") authRecovering=true;
+    if(ev==="SIGNED_OUT") authRecovering=false;
     authUser=s?s.user:null; authStudentId=null; authRunId=null;
     await authRefreshGate();
-    if(authUser) authPullLatest(); else refreshResumeBtn();
+    if(authUser&&!authRecovering) authPullLatest(); else if(!authUser) refreshResumeBtn();
   });
   $("authBox").classList.remove("hidden");
-  $("authSignIn").onclick=async()=>{
+  $("authSwitch").onclick=()=>authSetMode(authMode==="signup"?"signin":"signup");
+  $("authGo").onclick=async()=>{
     authSetErr("");
+    const c=authCreds(); if(!c) return;
+    authBusy(true,authMode==="signup"?"יוצרים חשבון…":"נכנסים…");
     try{
-      const {error}=await sb.auth.signInWithPassword(
-        {email:$("authEmail").value.trim(),password:$("authPass").value});
-      if(error) throw error;
-    }catch(e){ authSetErr("כניסה נכשלה — לבדוק אימייל/סיסמה."); }
+      if(authMode==="signin"){
+        const {error}=await sb.auth.signInWithPassword({email:c.email,password:c.pass});
+        if(error) throw error;
+        authSetErr("נכנסתם 🎉","ok");
+      }else{
+        const {data,error}=await sb.auth.signUp({email:c.email,password:c.pass});
+        if(error) throw error;
+        /* מייל שכבר רשום אינו מחזיר שגיאה (Supabase מסתיר קיום חשבונות),
+           אלא user עם identities ריק. בלי הבדיקה הזאת ההורה מקבל "בדקו את
+           המייל" על מייל שמעולם לא נשלח, ומחכה לו לנצח. */
+        const known=data&&data.user&&Array.isArray(data.user.identities)&&data.user.identities.length===0;
+        if(known){
+          authSetMode("signin");
+          authSetErr("האימייל הזה כבר רשום. היכנסו עם הסיסמה שבחרתם, או לחצו «שכחתי סיסמה».","info");
+        }else if(!data.session){
+          authSetErr("✅ החשבון נוצר. שלחנו מייל אישור אל "+c.email+
+            " — לחצו על הקישור שבו, וחזרו לכאן להיכנס.","ok");
+        }else{
+          authSetErr("החשבון נוצר 🎉","ok");
+        }
+      }
+    }catch(e){ authSetErr(authErrText(e)); }
+    authBusy(false);
   };
-  $("authSignUp").onclick=async()=>{
-    authSetErr("");
+  $("authForgot").onclick=async()=>{
+    const email=$("authEmail").value.trim();
+    if(!email){ authSetErr("מלאו קודם את האימייל, ואז «שכחתי סיסמה»."); return; }
+    authSetErr("שולחים…","info");
     try{
-      const {data,error}=await sb.auth.signUp(
-        {email:$("authEmail").value.trim(),password:$("authPass").value});
+      const {error}=await sb.auth.resetPasswordForEmail(email,
+        {redirectTo:location.origin+location.pathname});
       if(error) throw error;
-      /* אם צריך אימות מייל, אין session עדיין — authRefreshGate (מ-onAuthStateChange
-         או בביקור הבא) ידאג לצעד "שם הילד/ה + הסכמה" ברגע שיש session אמיתי. */
-      if(!data.session) authSetErr("נרשמתם! בדקו את המייל לאישור, ואז התחברו.");
-    }catch(e){ authSetErr("הרשמה נכשלה — לבדוק אימייל/סיסמה (לפחות 6 תווים)."); }
+      authSetErr("שלחנו קישור אל "+email+". הקישור מחזיר אתכם לכאן, ואז בוחרים סיסמה חדשה.","ok");
+    }catch(e){ authSetErr(authErrText(e)); }
+  };
+  $("authSetPass").onclick=async()=>{
+    authSetErr3("");
+    const p=$("authNewPass").value;
+    if(p.length<6){ authSetErr3("הסיסמה קצרה מדי — צריך לפחות 6 תווים."); return; }
+    const b=$("authSetPass"); b.disabled=true; b.textContent="שומרים…";
+    try{
+      const {error}=await sb.auth.updateUser({password:p});
+      if(error) throw error;
+      authRecovering=false;
+      try{ history.replaceState(null,"",location.pathname); }catch(e){}
+      authSetErr3("הסיסמה נשמרה 🎉","ok");
+      await authRefreshGate();
+      if(authUser) authPullLatest();
+    }catch(e){ authSetErr3(authErrText(e)); }
+    b.disabled=false; b.textContent="שמירת הסיסמה";
   };
   $("authFinishProfile").onclick=async()=>{
     authSetErr2("");
