@@ -53,10 +53,12 @@
   .panel .keys b{background:#1D2B45;color:#FFF8EC;border-radius:8px;padding:3px 10px;font-size:14px;}
   .panel .worlds{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;font-size:13px;font-weight:700;color:#3A4A66;}
   .panel .worlds span{background:#F1E7D4;border-radius:999px;padding:4px 11px;}
-  /* מסך הפתיחה גדל (3 מקצועות · 8 עולמות · כפתור המשך) — שיגלול בטלפון ולא ייחתך.
+  /* **כל** חלונית גוללת בטלפון ולא נחתכת. תחילה זה חל רק על מסך הפתיחה, אבל
+     שאלת הבנת הנקרא באנגלית ארוכה בדיוק כמו מסך הפתיחה: קטע של 488 תווים
+     ייצר כרטיס בגובה 956px בתוך מסך של 844 — הצ׳יפים נחתכו למעלה, ותשובה ד׳
+     נחתכה למטה ולא היה אפשר ללחוץ עליה. אותו כלל, בכל החלוניות.
      border-box חובה: בלעדיו ה-padding מתווסף ל-max-height והפאנל עדיין גולש. */
-  .panel{box-sizing:border-box;}
-  #introOv .panel{max-height:94vh;overflow:auto;}
+  .panel{box-sizing:border-box;max-height:94vh;overflow:auto;overscroll-behavior:contain;}
   /* במסך נמוך מוותרים על רשימת שמות העולמות — «יוצאים לדרך» חייב להיראות בלי גלילה */
   @media (max-height:800px){ .panel .worlds{display:none;} }
   /* בטלפון אין מקלדת — הרמז «רווח לקפיצה» מיותר ותופס שורה יקרה */
@@ -120,6 +122,27 @@
      מבודד פר-ריצה ב-fmtEnStem. כפיית LTR על הגזע הזיזה את העברית לשמאל
      והילד פגש את המילה האנגלית ראשונה. */
   #qOv .panel.en .qopt{direction:ltr;text-align:left;}
+  /* גזע **כולו** אנגלי מיושר לשמאל: אין בו עברית שתיזוז, ופסקה אנגלית
+     מיושרת-ימין קשה לקריאה לילד. גזע מעורב נשאר RTL — שם כפיית LTR הזיזה את
+     ההוראה העברית לשמאל והילד פגש את המילה האנגלית ראשונה. */
+  #qOv .panel.en .qstem.ltr{direction:ltr;text-align:left;}
+  /* אחרי הכיווץ, שאלה נכנסת בשלמותה בכל טלפון רגיל (נמדד: 0 מתוך 710 דורשות
+     גלילה ב-390×844 וב-414×896). במסך קטן במיוחד (360×640) 17 שאלות קריאה
+     ארוכות עדיין גולשות — ושם ילד עלול לא לדעת שיש עוד. הרמז מופיע רק כשיש
+     באמת מה לגלול, ונעלם ברגע שהגיעו לתחתית. */
+  #qOv .panel{position:relative;}
+  #qOv .panel.more{padding-bottom:38px;}   /* שהתגית לא תכסה תשובה */
+  #qOv .panel.more::after{content:"↓ יש עוד למטה";position:sticky;bottom:-14px;align-self:center;
+        background:#7C5CFF;color:#fff;border-radius:999px;padding:5px 14px;font-size:13.5px;font-weight:800;
+        box-shadow:0 4px 12px rgba(15,25,45,.28);pointer-events:none;}
+  /* מסך צר או נמוך: מכווצים את טיפוגרפיית השאלה. שאלת קריאה ארוכה נכנסת
+     כך ברוב המכשירים בלי גלילה בכלל, והגלילה נשארת כרשת ביטחון. */
+  @media (max-width:560px),(max-height:720px){
+    #qOv .panel{padding:20px 18px 18px;gap:9px;}
+    #qOv .qstem{font-size:17px;line-height:1.45;}
+    #qOv .qopt{font-size:15.5px;padding:10px 12px;}
+    #qOv .qchip{font-size:12.5px;padding:3px 10px;}
+  }
   #qOv .panel.en .qfb .qbtn{align-self:flex-start;}
   .qnumrow{display:flex;gap:8px;}
   .qnumrow input{font:inherit;font-size:19px;padding:10px 12px;border:2px solid #E3D9C4;border-radius:12px;width:170px;
@@ -1949,6 +1972,8 @@ function openQuestion(mode,q,T,cube,grant,deny){
   qUI.atBridge=!!(cube&&cube.bridge);
   state.running=false;
   $("qOv").classList.remove("hidden");
+  const qPanel=$("qOv").querySelector(".panel");
+  qPanel.scrollTop=0;                              // כרטיס גלול מהשאלה הקודמת
   /* אם הצגת השאלה נכשלת, הילד נשאר מול חלונית ריקה בלי כפתורים והמשחק עצור
      לנצח — בדיוק «הדמות נתקעה». נכשלים לטובת הילד: סוגרים, נותנים את
      הקובייה, וממשיכים. שאלה שלא הוצגה אינה ראיה על שום דבר. */
@@ -2014,6 +2039,40 @@ function bridgeQuestion(b){
     ()=>{ b.hold=true; showToast("ננסה שוב — התרחקו רגע וחזרו לגשר 💪",2600); });
 }
 
+/* «יש עוד למטה» — רק כשיש באמת מה לגלול ורק עד שהגיעו לתחתית. */
+function syncScrollCue(){
+  const p=$("qOv").querySelector(".panel");
+  p.classList.toggle("more", p.scrollHeight-p.clientHeight-p.scrollTop>2);
+}
+
+/* אי נוסחה רחב מהכרטיס. נוסחה **אסור** לה להישבר בין שתי שורות (זה הכלל
+   שמגן על `−4x < 12` מלהתפרק), ולכן ריצה ארוכה — רשימת נקודות, שרשרת נתוני
+   חפיפה — גלשה מהכרטיס ונחתכה בטלפון. הפתרון היחיד שאינו נוגע ב-fmtMath ואינו
+   נוגע בסדר התווים: מקטינים את האי עד שהוא נכנס. נוסחה קטנה יותר עדיפה על
+   נוסחה חתוכה, ואיי טקסט (class="txt") לא נוגעים — הם נשברים לשורות בעצמם. */
+function fitFormulas(){
+  const shrink=(b,avail)=>{
+    b.style.fontSize="";
+    if(!(avail>0)) return;
+    const w=b.getBoundingClientRect().width;
+    if(w>avail+0.5&&w>0) b.style.fontSize=Math.max(62,Math.floor(avail/w*100))+"%";
+  };
+  const inner=el=>{ const c=getComputedStyle(el);
+    return el.clientWidth-parseFloat(c.paddingLeft||0)-parseFloat(c.paddingRight||0); };
+  for(const id of ["qStem","qFb"]){
+    const el=$(id); if(!el) continue;
+    const avail=inner(el);
+    el.querySelectorAll("bdi:not(.txt)").forEach(b=>shrink(b,avail));
+  }
+  $("qBody").querySelectorAll(".qopt").forEach(btn=>{
+    const key=btn.querySelector(".key");
+    const avail=inner(btn)-(key?key.getBoundingClientRect().width:0)-12;
+    btn.querySelectorAll("bdi:not(.txt)").forEach(b=>shrink(b,avail));
+  });
+}
+$("qOv").querySelector(".panel").addEventListener("scroll",syncScrollCue,{passive:true});
+window.addEventListener("resize",()=>{ if(qUI.open){ fitFormulas(); syncScrollCue(); } });
+
 function closeQuestion(granted){
   qUI.open=false;
   $("qOv").classList.add("hidden");
@@ -2069,6 +2128,8 @@ function renderQuestion(q){
     (qUI.mode==="probe"?`<span class="qchip">הצצה קטנה 👀</span>`:"")+
     (qUI.atBridge?`<span class="qchip">🌉 קובייה לגשר</span>`:"");
   $("qStem").innerHTML=en?fmtEnStem(q.stem):fmtMath(q.stem);
+  /* אותו תנאי בדיוק שבו fmtEnStem מחזיר אי אחד: אין ולו אות עברית אחת. */
+  $("qStem").classList.toggle("ltr",en&&!/[֐-׿]/.test(q.stem||""));
   $("qFb").innerHTML="";
   const body=$("qBody"); body.innerHTML="";
   if(q.qtype==="mc"){
@@ -2083,14 +2144,15 @@ function renderQuestion(q){
       wrap.appendChild(b);
     });
     body.appendChild(wrap);
-    const first=wrap.querySelector("button"); if(first) first.focus();
+    const first=wrap.querySelector("button");
+    if(first) first.focus({preventScroll:true});
   }else{
     body.innerHTML=`<div class="qnumrow"><input id="qNum" inputmode="numeric" autocomplete="off" placeholder="התשובה שלי">`+
                    `<button class="qbtn" id="qGo" type="button">בדיקה</button></div>`;
     const go=()=>{const v=$("qNum").value; if(v.trim()!=="") answerNumeric(q,v);};
     $("qGo").onclick=go;
     $("qNum").addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
-    $("qNum").focus();
+    $("qNum").focus({preventScroll:true});
   }
   /* «עוד לא למדתי» — עדיף על ניחוש: אותה השפעה על המנוע, בלי אבחנה שגויה
      בפרופיל ובלי תחושת כישלון (סביבה ביתית ללא משגיח). */
@@ -2103,6 +2165,9 @@ function renderQuestion(q){
     finishAnswer(q,false,"(דילוג)",null,true);
   };
   body.appendChild(skip);
+  fitFormulas();
+  $("qOv").querySelector(".panel").scrollTop=0;   // תמיד מתחילים מראש השאלה
+  syncScrollCue();
 }
 
 function answerMC(q,opt,wrap,order){
@@ -2170,6 +2235,8 @@ function finishAnswer(q,correct,given,diagnosis,skipped){
   }
   $("qCont").onclick=()=>advance(correct);
   $("qCont").focus();
+  fitFormulas();
+  syncScrollCue();
 }
 
 /* מעבר המדרגה. לכל היותר שתי שאלות במפגש אחד עם קובייה (הניסיון השני של
