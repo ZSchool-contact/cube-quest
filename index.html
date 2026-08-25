@@ -110,6 +110,11 @@
      משלו, כמו בספר לימוד (fmtMath מסמן אותו class="mx"). */
   .qstem bdi,.qopt bdi{white-space:nowrap;}
   .qstem bdi.mx{display:block;text-align:center;margin:.5em auto .1em;font-size:1.06em;}
+  /* אי של **טקסט** (גזע או אפשרות באנגלית) הוא לא נוסחה — הוא חייב להישבר
+     לשורות. בלי זה משפט אנגלי שלם יושב באי אחד עם nowrap, גולש משני צדי
+     הכרטיס ונחתך (נצפה במשחק אמיתי, אוג' 2026: «The scientists made an
+     important ___ about the causes of the disease.»). */
+  .qstem bdi.txt,.qopt bdi.txt,.qfb bdi.txt{white-space:normal;}
   /* שאלת אנגלית: האפשרויות זורמות משמאל לימין (הן הפריט הנבדק).
      הגזע נשאר RTL — ב-Pre-A1/A1 ההוראה בעברית (R01), והפריט האנגלי בתוכה
      מבודד פר-ריצה ב-fmtEnStem. כפיית LTR על הגזע הזיזה את העברית לשמאל
@@ -201,6 +206,7 @@
   <div class="chip" id="wingChip" style="display:none;background:rgba(124,92,255,.9);">🪶 <b id="hudWings">0</b><small>שנ׳</small></div>
   <div id="hudBtns">
     <button id="muteBtn" title="השתקה">🔊</button>
+    <button id="unstickBtn" title="נתקעתי — חזרה לנקודת הביניים">🆘</button>
     <button id="restartBtn" title="התחלה מחדש">⟳</button>
   </div>
 </div>
@@ -712,32 +718,49 @@ function fmtMath(s){
     return '<bdi dir="ltr">' + esc(str) + '</bdi>';
   /* (2) נוסחה בתוך משפט עברי. '_' נכלל כדי ש-"12 __ 15" יישאר
          אי אחד ולא יתפצל לשני איים שסדרם מתהפך.
-         הריצה יכולה להתחיל גם באות (משתנה) או במינוס: בלי זה "−4x < 12" צויר
-         "12 > x4−" ו-"4x − 3 > 2x + 5" צויר "5 + x − 3 > 2x4" — כיסוי חלקי
-         שמערבב את האגפים. נמדד בדפדפן, לא נגזר מהאלגוריתם (qa\qa_bidi.py).
+         הריצה יכולה להתחיל גם באות (משתנה), במינוס, ב-'(' שנסגר בתוך הריצה,
+         בשורש או בקו ערך מוחלט: בלי זה "−4x < 12" צויר "12 > x4−",
+         "(0,0)" צויר "((0,0" ו-"√22" צויר "22√". נמדד בדפדפן, לא נגזר
+         מהאלגוריתם (qa\qa_atoms.py · qa\qa_bidi.py).
          מקרה (3) למטה נשמר: משוואת ספרות שנמשכת למילים עבריות נשארת RTL. */
   /* «תרגיל» = אי שיש בו ספרה ואופרטור אמיתי (השוואה, פעולה בין שני
-     אופרנדים, או מקום חסר). תרגיל מקבל **שורה משלו** (class="mx") רק אם
-     הוא היחיד בגזע והוא בסופו או מיד אחרי נקודתיים — התבנית של ספר לימוד.
-     אחרת הוא נשאר בשורה, ורק מובטח שלא יישבר באמצע (white-space:nowrap
-     ב-CSS). בלי זה "4□3,000 > 463,000" נחתך בין שתי שורות. */
-  const RUN = /(?:(?<![֐-׿])[−-])?[0-9A-Za-z□_][0-9A-Za-z□_.,:%\s+\-−×÷*/=<>≤≥≈()]*[0-9A-Za-z□_%)]|[0-9□]/g;
-  const isEx = t => /[0-9]/.test(t) && /[<>≤≥≠=]|[0-9]\s*[+\-−×÷]\s*[0-9]|_{2,}/.test(t)
+     אופרנדים, או מקום חסר). תרגיל מקבל **שורה משלו** (class="mx") רק
+     בתבנית של ספר לימוד — אחרי נקודתיים **וגם** בסוף הגזע. אחרת הוא נשאר
+     בשורה, ורק מובטח שלא יישבר באמצע (white-space:nowrap ב-CSS).
+     בלי זה "4□3,000 > 463,000" נחתך בין שתי שורות. */
+  const RUN = /(?:(?<![֐-׿])[−-])?(?:\((?=[^()֐-׿]*\))[−-]?)?[0-9A-Za-z□_√|π∠∡△²³¹⁰-ₜᵃ-ᵫ][0-9A-Za-z□_.,:;%\s+\-−–×÷·*/=<>≤≥≈≠≅≡∥⊥→←↔()|√°′″π∠∡△²³¹⁰-ₜᵃ-ᵫ‎‏⁦-⁩]*[0-9A-Za-z□_%)°′″|²³¹⁰-ₜᵃ-ᵫ]|[0-9□]/g;
+  const isEx = t => /[0-9]/.test(t) && /[<>≤≥≠=]|[0-9]\s*[+\-−×÷·*]\s*[0-9(]|_{2,}/.test(t)
                     && t.replace(/\s/g, "").length >= 3;
   const exCount = (str.match(RUN) || []).filter(isEx).length;
-  return str.replace(RUN, function(m, off, s2){
-    const nm = s2.slice(off + m.length).match(/^\s*(\S)/);
+  return str.replace(RUN, function(full, off, s2){
+    /* סוגר לא-מאוזן בקצה הריצה שייך למשפט העברי ולא לנוסחה: ב-"(השתמשו
+       ב-π ≈ 3.14)" הסוגר הימני סוגר מילים עבריות, ואסור לגרור אותו לאי. */
+    let m = full, pre = "", post = "";
+    for(;;){
+      const o = (m.match(/\(/g) || []).length, c = (m.match(/\)/g) || []).length;
+      if(o > c && m.charAt(0) === "("){ pre += "("; m = m.slice(1); continue; }
+      if(c > o && m.charAt(m.length - 1) === ")"){ post = ")" + post; m = m.slice(0, -1); continue; }
+      break;
+    }
+    if(!m) return esc(full);
+    const nm = s2.slice(off + full.length).match(/^\s*(\S)/);
     const hebrewNext = nm ? /[֐-׿]/.test(nm[1]) : false;
-    if(/[<>≤≥_]/.test(m) || /[A-Za-z]/.test(m) || !hebrewNext){
+    /* תווים שחייבים אי LTR גם כשמילה עברית ממשיכה אחריהם: סוגריים וחיצים
+       ממוזגים ולכן נמשכים הפוך, ושורש/מעריך/מעלות ננטשים בצד הלא נכון של
+       האופרנד — "√25=5 ס\"מ" צויר "25√=5" ו-"(3,2) בציר x" צויר "((3,2".
+       נוסחת ספרות ואופרטור בלבד נשארת בענף ה-RLM שמתחתיה, כמדוד. */
+    const MUST_ISOLATE = /[()√|°′″∠∡△∥⊥≅≡→←↔²³¹⁰-ₜᵃ-ᵫ]/;
+    if(/[<>≤≥_]/.test(m) || /[A-Za-z]/.test(m) || MUST_ISOLATE.test(m) || !hebrewNext){
       /* תווי כיוון בלתי-נראים (LRM/RLM/LRI…PDI) מופיעים בסוף גזעים במאגר
          ושברו את הבדיקה הזאת — מנקים אותם לפני ההשוואה, לא מהטקסט. */
       const bare = t => t.replace(/[‎‏⁦-⁩]/g, "");
-      const tail = /^[\s?.!]*$/.test(bare(s2.slice(off + m.length)));
+      const tail = /^[\s?.!]*$/.test(bare(s2.slice(off + full.length)));
       const afterColon = /:\s*$/.test(bare(s2.slice(0, off)));
-      const blk = exCount === 1 && isEx(m) && (tail || afterColon);
-      return '<bdi dir="ltr"' + (blk ? ' class="mx"' : '') + '>' + esc(m) + '</bdi>';
+      const blk = exCount === 1 && isEx(m) && tail && afterColon;
+      return esc(pre) + '<bdi dir="ltr"' + (blk ? ' class="mx"' : '') + '>' + esc(m)
+             + '</bdi>' + esc(post);
     }
-    return esc(m).replace(/[=+−×÷]/g, op => '‏' + op + '‏');
+    return esc(full).replace(/[=+−×÷·]/g, op => '‏' + op + '‏');
   });
 }
 
@@ -1416,6 +1439,7 @@ function loadWorld(i){
   const p=plan[Math.max(0,Math.min(i,plan.length-1))];
   state.stageIdx=i; state.worldIdx=p?p.w:0; W=WORLDS[state.worldIdx];
   state.flagHit=false; state.gateMsgT=0;
+  state.stuckT=0; state.stuckX=null; state.stuckHinted=false;
   bridges=W.bridges.map(b=>({x0:b[0],x1:b[1],need:b[2],built:false,building:false,t:0,hold:false,mode:null,coolT:0,
     planks:b[2], knocked:0}));                       // קרש אחד לכל קובייה — בדיוק need
   cubes=W.cubes.map((c,j)=>({x:c[0],y:c[1],idx:j,taken:false,ph:j*1.3,hold:false,tries:0}));
@@ -1514,8 +1538,20 @@ const sfx={
   win(){ [523,523,659,784,1047,784,1047].forEach((f,i)=>tone(f,0.22,"square",0.09,null,i*0.13)); }
 };
 
-/* ---------- input ---------- */
+/* ---------- input ----------
+   שתי תקלות שדווחו מהשטח (אוג' 2026) ושתיהן מקורן כאן:
+
+   «הדמות זזה ולא מפסיקה» — keydown נרשם, ואז החלון מאבד פוקוס (מעבר ללשונית,
+   alt-tab, הודעה שקופצת במכשיר, לחיצה על חלון אחר). ה-keyup נמסר לחלון שקיבל
+   את הפוקוס ולא לנו, keys.R נשאר true לנצח, והדמות רצה ימינה עד קץ המסך. לכן
+   כל אירוע של איבוד פוקוס מנקה את מצב הקלט.
+
+   «הדמות לא מגיבה» בנייד — האצבע גולשת מעט מכפתור בן 74px, pointerleave שיחרר
+   את המקש, ו-pointerup כבר לא הגיע לכפתור. לכן לוכדים את המצביע
+   (setPointerCapture), מנהלים מפת pointerId → מקש, ומחזיקים רשת ביטחון ברמת
+   החלון. pointerleave נמחק — עם לכידה הוא רק מזיק. */
 const keys={L:false,R:false};
+const touchPid=Object.create(null);
 function press(k){
   if(k==="L")keys.L=true; if(k==="R")keys.R=true;
   if(k==="J"){ player.jbuf=0.12; player.jheld=true; }
@@ -1524,6 +1560,11 @@ function release(k){
   if(k==="L")keys.L=false; if(k==="R")keys.R=false;
   if(k==="J"){ player.jheld=false;
     if(player.vy<0&&!player.jcut){ player.vy*=0.45; player.jcut=true; } }
+}
+function clearKeys(){
+  keys.L=false; keys.R=false;
+  try{ if(player){ player.jheld=false; player.jbuf=0; } }catch(e){}
+  for(const id in touchPid) delete touchPid[id];
 }
 window.addEventListener("keydown",e=>{
   if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Spacebar"].includes(e.key)) e.preventDefault();
@@ -1541,16 +1582,35 @@ window.addEventListener("keyup",e=>{
   if(e.key==="ArrowRight"||k==="d") release("R");
   if(e.key===" "||e.key==="ArrowUp"||k==="w") release("J");
 });
+/* איבוד פוקוס = שחרור כל המקשים. זה התיקון ל«רצה ולא עוצרת». */
+window.addEventListener("blur",clearKeys);
+window.addEventListener("focus",clearKeys);
+window.addEventListener("pagehide",clearKeys);
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) clearKeys(); });
 /* touch */
-if("ontouchstart" in window){
-  document.getElementById("touch").classList.add("on");
-  document.getElementById("cq-root").classList.add("touch");   // מסתיר את רמזי המקלדת
+{
+  if("ontouchstart" in window||navigator.maxTouchPoints>0){
+    document.getElementById("touch").classList.add("on");
+    document.getElementById("cq-root").classList.add("touch"); // מסתיר את רמזי המקלדת
+  }
   const bind=(id,k)=>{const b=document.getElementById(id);
-    b.addEventListener("pointerdown",e=>{e.preventDefault();ac();press(k);});
-    b.addEventListener("pointerup",e=>{e.preventDefault();release(k);});
-    b.addEventListener("pointercancel",()=>release(k));
-    b.addEventListener("pointerleave",()=>release(k));};
+    b.addEventListener("pointerdown",e=>{
+      e.preventDefault(); ac();
+      /* לכידת המצביע: מכאן והלאה כל אירוע של האצבע הזאת מגיע לכפתור, גם אם
+         היא גלשה ממנו. בלי זה pointerup הולך לאיבוד והמקש נתקע לחוץ. */
+      try{ b.setPointerCapture(e.pointerId); }catch(err){}
+      touchPid[e.pointerId]=k; press(k);
+    });
+    const up=e=>{ if(touchPid[e.pointerId]===k){ delete touchPid[e.pointerId]; release(k); } };
+    b.addEventListener("pointerup",e=>{ e.preventDefault(); up(e); });
+    b.addEventListener("pointercancel",up);
+  };
   bind("tL","L"); bind("tR","R"); bind("tJ","J");
+  /* רשת ביטחון: אצבע שהורמה בכל מקום אחר במסך משחררת את המקש שהיא החזיקה. */
+  const winUp=e=>{ const k=touchPid[e.pointerId];
+    if(k){ delete touchPid[e.pointerId]; release(k); } };
+  window.addEventListener("pointerup",winUp,true);
+  window.addEventListener("pointercancel",winUp,true);
 }
 
 /* ---------- HUD / overlays ---------- */
@@ -1574,7 +1634,29 @@ function toggleMute(){
 }
 $("muteBtn").textContent=audio.muted?"🔇":"🔊";
 $("muteBtn").onclick=()=>{ac();toggleMute();};
+/* «נתקעתי» — הצלה שאינה מוחקת כלום: משחררת מקשים תקועים, מחזירה את הדמות
+   לנקודת הביניים ומחזירה את המשחק לרוץ אם נשאר עצור. זה מה שילד צריך
+   כשמשהו נתקע, ולכן הוא כפתור ולא מקש (בנייד אין R). */
+$("unstickBtn").onclick=()=>{
+  clearKeys();
+  if(!anyOverlayOpen()){                                // חלונית פתוחה — לא נוגעים בה
+    respawn(false);
+    state.stuckT=0; state.stuckHinted=false;
+    if(!state.flagHit) state.running=true;
+    showToast("חזרתם לנקודת הביניים — קדימה! 💪",2000);
+  }
+};
+/* ⟳ מוחק את כל ההתקדמות. ילד שנתקע לוחץ על מה שנראה כמו הצלה — ולכן
+   הלחיצה הראשונה רק מזהירה, והשנייה (תוך 5 שניות) באמת מאפסת. */
+let restartArmT=null;
 $("restartBtn").onclick=()=>{
+  const t=performance.now();
+  if(restartArmT===null||t-restartArmT>5000){
+    restartArmT=t;
+    showToast("לחיצה נוספת תתחיל את הכול מחדש ותמחק את ההתקדמות. נתקעתם? לחצו 🆘",3600);
+    return;
+  }
+  restartArmT=null;
   clearProgress();
   session=null; initGame();
   $("winOv").classList.add("hidden"); $("repOv").classList.add("hidden");
@@ -1867,7 +1949,23 @@ function openQuestion(mode,q,T,cube,grant,deny){
   qUI.atBridge=!!(cube&&cube.bridge);
   state.running=false;
   $("qOv").classList.remove("hidden");
-  renderQuestion(q);
+  /* אם הצגת השאלה נכשלת, הילד נשאר מול חלונית ריקה בלי כפתורים והמשחק עצור
+     לנצח — בדיוק «הדמות נתקעה». נכשלים לטובת הילד: סוגרים, נותנים את
+     הקובייה, וממשיכים. שאלה שלא הוצגה אינה ראיה על שום דבר. */
+  try{
+    renderQuestion(q);
+  }catch(err){
+    console.error("[cq] renderQuestion",err);
+    qUI.open=false;
+    $("qOv").classList.add("hidden");
+    $("qFb").innerHTML="";
+    const g=qUI.grant;
+    qUI.T=null; qUI.q=null; qUI.grant=null; qUI.deny=null; qUI.cube=null; qUI.atBridge=false;
+    clearKeys();
+    try{ if(g) g(); }catch(e){}
+    if(!state.flagHit) state.running=true;
+    showToast("השאלה הזאת לא נטענה — הקובייה שלכם בכל מקרה 🧊",2600);
+  }
 }
 
 /* הגעה לגשר בלי מספיק קוביות — הבחירה בידי הילד: לחזור ולאסוף מהדרך, או
@@ -1890,7 +1988,7 @@ function closeBridgeChoice(){
 $("brAsk").onclick=()=>{
   const b=closeBridgeChoice(); if(!b) return;
   b.mode="question";                                // בחרו לענות — לא נשאל שוב עד שמתרחקים
-  bridgeQuestion(b);
+  try{ bridgeQuestion(b); }catch(e){ console.error("[cq] bridgeQuestion",e); }
   if(!qUI.open&&!state.flagHit) state.running=true;  // הקובייה ניתנה בלי שאלה — ממשיכים
 };
 $("brBack").onclick=()=>{
@@ -1920,9 +2018,14 @@ function closeQuestion(granted){
   qUI.open=false;
   $("qOv").classList.add("hidden");
   $("qFb").innerHTML="";
-  if(granted){ if(qUI.grant) qUI.grant(); }
-  else if(qUI.deny) qUI.deny();
+  /* grant/deny נכתבו במקומות רבים. חריגה באחד מהם השאירה את המשחק עצור
+     לנצח — החלונית כבר נסגרה, הילד רואה מסך תקין ודמות שאינה זזה. */
+  try{
+    if(granted){ if(qUI.grant) qUI.grant(); }
+    else if(qUI.deny) qUI.deny();
+  }catch(e){ console.error("[cq] closeQuestion",e); }
   qUI.T=null; qUI.q=null; qUI.grant=null; qUI.deny=null; qUI.cube=null; qUI.atBridge=false;
+  clearKeys();                       // הילד ענה בעכבר/מגע — מקש שנשאר לחוץ מזנק אותו קדימה
   if(!state.flagHit) state.running=true;
 }
 
@@ -1931,7 +2034,8 @@ function closeQuestion(granted){
    שאר המקצועות עוברים דרך fmtMath (ראו האזהרה למעלה — אין לגעת בו). */
 const escHtml=t=>String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const isEnglishQ=q=>!!q&&/^ENG-/.test(q.topic_id||"");
-const fmtQ=(en,t)=>en?'<bdi dir="ltr">'+escHtml(t)+'</bdi>':fmtMath(t);
+/* class="txt" = אי טקסט ולא נוסחה, ולכן מותר לו להישבר לשורות (ראו ה-CSS). */
+const fmtQ=(en,t)=>en?'<bdi dir="ltr" class="txt">'+escHtml(t)+'</bdi>':fmtMath(t);
 /* גזע של שאלת אנגלית. גזע שכולו אנגלית (A2 ומעלה) — אי LTR אחד.
    גזע מעורב (Pre-A1/A1: הוראה בעברית, הפריט הנבדק באנגלית) — כל ריצה
    אנגלית מבודדת בנפרד, והמשפט נשאר בזרימת RTL. נמדד: בלי זה 5 מתוך 6
@@ -1941,9 +2045,9 @@ const fmtQ=(en,t)=>en?'<bdi dir="ltr">'+escHtml(t)+'</bdi>':fmtMath(t);
    הוא מפצל על הגרש ו-"Ben's" נשבר לשני איים. */
 const fmtEnStem=t=>{
   const s=escHtml(String(t==null?"":t));
-  if(!/[֐-׿]/.test(s)) return '<bdi dir="ltr">'+s+'</bdi>';
+  if(!/[֐-׿]/.test(s)) return '<bdi dir="ltr" class="txt">'+s+'</bdi>';
   return s.replace(/[A-Za-z\/_][A-Za-z0-9 ,.'’!?:;()\/_—–-]*[A-Za-z0-9._'’!?)\/]|[A-Za-z]/g,
-                   m=>'<bdi dir="ltr">'+m+'</bdi>');
+                   m=>'<bdi dir="ltr" class="txt">'+m+'</bdi>');
 };
 
 function renderQuestion(q){
@@ -2234,10 +2338,17 @@ function update(dt){
   p.ride=null;
 
   const S=solids();
-  /* X */
+  /* X — פתרון החדירה נעשה לפי כיוון התנועה, וזאת מלכודת: דמות שנדחפה *לתוך*
+     גוש (פלטפורמה נעה דוחפת אותה לקיר) יוצאת בכל לחיצה לצד ההפוך — ימינה
+     מקפיצה שמאלה ולהפך — ולעולם אינה משתחררת. לכן חדירה עמוקה, וכן vx=0,
+     נפתרות לפי הצד הקרוב ולא לפי הכיוון. */
   p.x+=p.vx*dt;
   for(const r of S){ if(overlap(p.x,p.y,PW,PH,r)){
-    if(p.vx>0) p.x=r.x-PW; else if(p.vx<0) p.x=r.x+r.w; p.vx=0; } }
+    const deep = p.vx===0 || (p.vx>0 ? (p.x+PW)-r.x : (r.x+r.w)-p.x) > PW*0.6;
+    if(deep) p.x = (p.x+PW/2 < r.x+r.w/2) ? r.x-PW : r.x+r.w;
+    else if(p.vx>0) p.x=r.x-PW;
+    else p.x=r.x+r.w;
+    p.vx=0; } }
   /* Y */
   const prevBottom=p.y+PH;
   p.y+=p.vy*dt;
@@ -2364,6 +2475,16 @@ function update(dt){
       spawnBurst(W.flagX-120+Math.random()*240,GY-160,["#FF6FA5","#FFD166","#7C5CFF","#4CC38A"],8,300);
     if(state.time-state.flagT>1.4 && $("winOv").classList.contains("hidden")) completeStage();
   }
+
+  /* גלאי היתקעות: מקש כיוון לחוץ והדמות אינה זזה. אחרי 2.5 שניות מציעים את
+     🆘 — לחיצה לתוך קיר היא מצב לגיטימי, ולכן זו הצעה ולא פעולה. */
+  if((keys.L||keys.R)&&Math.abs(p.x-(state.stuckX==null?-1e9:state.stuckX))<2){
+    state.stuckT=(state.stuckT||0)+dt;
+    if(state.stuckT>2.5&&!state.stuckHinted){
+      state.stuckHinted=true;
+      showToast("נתקעתם? לחצו 🆘 למעלה כדי לחזור לנקודת הביניים",3400);
+    }
+  }else{ state.stuckT=0; state.stuckX=p.x; }
 
   /* camera */
   const target=p.x+PW/2-viewW*0.45+p.face*60;
@@ -2999,12 +3120,43 @@ function draw(){
   drawWeather();
 }
 
-/* ---------- main loop ---------- */
-let last=performance.now();
+/* שגיאה גלובלית: עד היום היא נבלעה בשקט והמשחק פשוט הפסיק להגיב. */
+window.addEventListener("error",e=>{ console.error("[cq] uncaught",e.message,e.filename+":"+e.lineno); });
+window.addEventListener("unhandledrejection",e=>{ console.error("[cq] promise",e.reason); });
+
+/* ---------- main loop ----------
+   חריגה אחת ב-update או ב-draw הרגה את הלולאה לתמיד: requestAnimationFrame
+   הבא לא נקרא, המסך קפא על הפריים האחרון והמשחק "לא הגיב". עכשיו הלולאה
+   שורדת כל שגיאה — פריים אחד אובד במקום כל המשחק.
+
+   שומר-קיפאון: state.running=false נקבע רק בשלושה מקומות, וכל אחד מהם מלווה
+   בחלונית. אם אין חלונית פתוחה ובכל זאת המשחק אינו רץ — מישהו לא החזיר אותו,
+   והדמות עומדת ולא מגיבה. אחרי כשנייה וחצי משחררים לבד. */
+const OVERLAY_IDS=["introOv","winOv","brOv","repOv","qOv"];
+function anyOverlayOpen(){
+  for(let i=0;i<OVERLAY_IDS.length;i++){
+    const e=document.getElementById(OVERLAY_IDS[i]);
+    if(e&&!e.classList.contains("hidden")) return true;
+  }
+  return false;
+}
+let last=performance.now(), frameErrs=0, stallSince=0;
 function frame(now){
   const dt=Math.min(1/30,(now-last)/1000); last=now;
-  if(state.running&&!document.hidden) update(dt);
-  draw();
+  try{
+    if(!state.running&&!state.flagHit&&!qUI.open&&!brBridge&&!anyOverlayOpen()){
+      if(!stallSince) stallSince=now;
+      else if(now-stallSince>1500){ stallSince=0; state.running=true;
+        console.warn("[cq] auto-resume: המשחק היה עצור בלי חלונית פתוחה"); }
+    }else stallSince=0;
+    if(state.running&&!document.hidden) update(dt);
+    draw();
+  }catch(err){
+    if(frameErrs++<5){
+      console.error("[cq] frame error",err);
+      try{ showToast("משהו נתקע לרגע — ממשיכים 🛠",2200); }catch(e){}
+    }
+  }
   requestAnimationFrame(frame);
 }
 initGame();
