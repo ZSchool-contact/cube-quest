@@ -193,9 +193,24 @@
   .authSwitchRow{font-size:13px;color:#5A6B7C;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;}
   .authSwitchRow .linklike{font-size:13px;padding:0;}
   #authBox.hidden,#authLoggedOut.hidden,#authNeedsProfile.hidden,#authLoggedIn.hidden,
-  #authRecovery.hidden,#authForgot.hidden,#playGate.hidden{display:none;}
+  #authRecovery.hidden,#authForgot.hidden,#playGate.hidden,#kidPicker.hidden{display:none;}
   #authWho{font-size:14px;color:#3A4A66;}
-  #authLoggedIn{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  #authLoggedIn{display:flex;flex-direction:column;align-items:stretch;gap:8px;}
+  .authRow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  /* ---------- מי משחק/ת עכשיו (אחים באותו חשבון) ---------- */
+  #kidWho{font-size:15px;color:#3A4A66;}
+  #kidWho b{color:#1D2B45;}
+  #kidPicker{display:flex;flex-direction:column;gap:8px;padding-top:8px;
+        border-top:2px dashed #E3D9C4;}
+  #kidList{display:flex;flex-direction:column;gap:6px;}
+  .kidBtn{font:inherit;font-size:15px;font-weight:800;border-radius:10px;border:2px solid #E3D9C4;
+        background:#FFFDF6;color:#1D2B45;padding:8px 12px;cursor:pointer;text-align:right;}
+  .kidBtn:hover{border-color:#7C5CFF;}
+  .kidBtn.sel{background:#7C5CFF;border-color:#7C5CFF;color:#fff;}
+  #kidHint{font-size:12.5px;color:#5A6B7C;line-height:1.45;margin:0;}
+  #authErr4{font-size:13px;min-height:16px;color:#D64545;line-height:1.45;}
+  #authErr4.ok{color:#1A7F4B;}
+  #authErr4.info{color:#3A4A66;}
   /* ---------- report ---------- */
   #repOv .panel{max-width:720px;text-align:right;align-items:stretch;gap:12px;max-height:88vh;overflow:auto;}
   #repOv h1{font-size:28px;text-align:center;}
@@ -293,9 +308,30 @@
         <div id="authErr2"></div>
       </div>
       <div id="authLoggedIn" class="hidden">
-        <span id="authWho"></span>
-        <button type="button" class="linklike" id="myReportsBtn">📊 הדוחות שלי</button>
-        <button type="button" class="linklike" id="authSignOut">התנתקות</button>
+        <!-- חשבון אחד = הורה אחד, אבל ילדים אחדים. בלי השורה הזאת האח השני
+             שיחק תחת השם והכיתה של הראשון, וכל הדוחות נשמרו על אותו שם. -->
+        <div class="authRow">
+          <span id="authWho"></span>
+          <button type="button" class="linklike" id="authSignOut">התנתקות</button>
+        </div>
+        <div class="authRow">
+          <span id="kidWho"></span>
+          <span>
+            <button type="button" class="linklike" id="kidSwitchBtn">החלפה / הוספת ילד/ה</button>
+            <button type="button" class="linklike" id="myReportsBtn">📊 הדוחות שלי</button>
+          </span>
+        </div>
+        <div id="kidPicker" class="hidden">
+          <div id="kidList"></div>
+          <p id="kidHint">כל ילד/ה מקבל/ת מיפוי, התקדמות ודוח נפרדים — והכיתה נבחרת
+            מחדש בתחילת המשחק.</p>
+          <input type="text" id="kidNewName" placeholder="שם של ילד/ה נוסף/ת">
+          <div class="authBtns">
+            <button type="button" id="kidAdd" class="authPrimary">משחק חדש בשם הזה</button>
+            <button type="button" class="linklike" id="kidCancel">ביטול</button>
+          </div>
+          <div id="authErr4"></div>
+        </div>
       </div>
     </div>
     <div class="worlds" id="worldsRow"></div>
@@ -431,13 +467,18 @@ const SUPABASE_CONFIG={"url": "https://godrtcfhlgwboueqtvuw.supabase.co", "anonK
 const sb=(SUPABASE_CONFIG&&window.supabase)
   ?window.supabase.createClient(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey)
   :null;
-let authUser=null, authStudentId=null, authRunId=null;
+let authUser=null, authStudentId=null, authStudentName=null, authRunId=null;
+/* רשימת הילדים של ההורה המחובר, וזכירת מי נבחר/ה אחרון/ה **במכשיר הזה**
+   (המפתח כולל את מזהה ההורה, כדי שמכשיר משותף לא יציע ילד של חשבון אחר). */
+let authStudents=[];
+const STUDENT_KEY="cq_student_v1";
 
 function authSay(id,msg,kind){ const e=$(id); if(!e) return;
   e.textContent=msg||""; e.className=msg?(kind||"err"):""; }
 function authSetErr(msg,kind){ authSay("authErr",msg,kind); }
 function authSetErr2(msg,kind){ authSay("authErr2",msg,kind); }
 function authSetErr3(msg,kind){ authSay("authErr3",msg,kind); }
+function authSetErr4(msg,kind){ authSay("authErr4",msg,kind); }
 
 /* Supabase מחזיר סיבה מדויקת לכל כישלון, והיא נבלעה קודם והוחלפה במשפט
    אחד ("לבדוק אימייל/סיסמה"). אותו טקסט תיאר סיסמה קצרה, מייל שלא אושר,
@@ -540,24 +581,99 @@ async function authRefreshGate(){
   $("authNeedsProfile").classList.toggle("hidden",ready);
   $("authLoggedIn").classList.toggle("hidden",!ready);
   $("playGate").classList.toggle("hidden",!ready);
-  if(ready) $("authWho").textContent=`מחוברים כ-${authUser.email}`;
+  if(ready){
+    $("authWho").textContent=`מחוברים כ-${authUser.email}`;
+    await authLoadStudents();
+    await authEnsureStudent();
+    renderKidRow(); renderKidList();
+  }
+}
+/* ---------- כמה ילדים לאותו חשבון ----------
+   הסכמה תמכה בזה מהיום הראשון (students.parent_id אינו ייחודי), אבל ה-UI
+   בחר תמיד את הילד/ה **האחרון/ה שנוצר/ה** ולא נתן דרך להוסיף עוד אחד —
+   ולכן אח שני שיחק תחת השם של הראשון, ירש את הכיתה שלו מהשמירה, ודרס לו
+   את שורת ההרצה בענן. עכשיו: בחירה מפורשת, שמירה נפרדת לכל ילד/ה, והשם
+   נכנס גם לדוח (report.student.name) כדי שהקובץ המיוצא יידע של מי הוא. */
+function storeStudentChoice(){
+  try{ localStorage.setItem(STUDENT_KEY,JSON.stringify(
+    {p:authUser?authUser.id:null, s:authStudentId, n:authStudentName})); }catch(e){}
+}
+function readStudentChoice(){
+  try{ const o=JSON.parse(localStorage.getItem(STUDENT_KEY)||"null");
+       return (o&&authUser&&o.p===authUser.id&&o.s)?o:null; }catch(e){ return null; }
+}
+async function authLoadStudents(){
+  authStudents=[];
+  if(!sb||!authUser) return authStudents;
+  try{
+    const {data}=await sb.from("students").select("id,name,created_at")
+      .eq("parent_id",authUser.id).order("created_at",{ascending:false});
+    authStudents=(data||[]).map(r=>({id:r.id,name:r.name}));
+  }catch(e){}
+  return authStudents;
+}
+async function authCreateStudent(name){
+  if(!sb||!authUser||!name) return null;
+  try{
+    const {data,error}=await sb.from("students")
+      .insert({parent_id:authUser.id,name}).select("id,name").single();
+    if(error) throw error;
+    authStudents.unshift({id:data.id,name:data.name});
+    return data;
+  }catch(e){ return null; }
 }
 async function authEnsureStudent(name){
-  /* "הילד/ה הנוכחי/ת" אחד למשתמש — תואם למשחק היום שלא מבחין בין כמה
-     ילדים לאותו הורה. הרחבה לבחירת ילד היא עבודה נפרדת (הסכמה כבר תומכת:
-     students.parent_id לא ייחודי). name נדרש רק ביצירה (בהרשמה). */
+  /* מחזירה את מזהה הילד/ה **הנבחר/ת**: קודם בחירה מפורשת בסשן הזה, אחריה
+     הבחירה השמורה במכשיר, ורק אז הילד/ה האחרון/ה שנוצר/ה. name נדרש רק
+     כשאין אף ילד/ה בחשבון (צעד ההרשמה). */
   if(!sb||!authUser) return null;
   if(authStudentId) return authStudentId;
   try{
-    const {data:existing}=await sb.from("students").select("id")
-      .eq("parent_id",authUser.id).order("created_at",{ascending:false}).limit(1);
-    if(existing&&existing.length){ authStudentId=existing[0].id; return authStudentId; }
+    if(!authStudents.length) await authLoadStudents();
+    const saved=readStudentChoice();
+    const pick=(saved&&authStudents.find(s=>s.id===saved.s))||authStudents[0]||null;
+    if(pick){ authStudentId=pick.id; authStudentName=pick.name; storeStudentChoice(); return authStudentId; }
     if(!name) return null;        // אין ילד קיים ואין שם חדש לספק — לא יוצרים בשקט
-    const {data:created,error}=await sb.from("students")
-      .insert({parent_id:authUser.id,name}).select("id").single();
-    if(error) throw error;
-    authStudentId=created.id; return authStudentId;
+    const created=await authCreateStudent(name);
+    if(!created) return null;
+    authStudentId=created.id; authStudentName=created.name; storeStudentChoice();
+    return authStudentId;
   }catch(e){ return null; }
+}
+function renderKidRow(){
+  const who=$("kidWho"); if(!who) return;
+  who.innerHTML="משחק/ת עכשיו: <b></b>";
+  who.querySelector("b").textContent=authStudentName||"—";
+}
+function renderKidList(){
+  const box=$("kidList"); if(!box) return;
+  box.innerHTML="";
+  authStudents.forEach(st=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="kidBtn"+(st.id===authStudentId?" sel":"");
+    b.textContent=(st.id===authStudentId?"✓ ":"")+st.name;
+    b.onclick=()=>authSelectStudent(st.id,st.name);
+    box.appendChild(b);
+  });
+}
+/* מעבר לילד/ה אחר/ת = מפגש אחר לגמרי: הרצה חדשה בענן (authRunId=null),
+   בלי השמירה המקומית של האח/ות, ובלי הגיל/הכיתה שנבחרו קודם — הכיתה של
+   האח הראשון נשמרה ונדבקה לשני, וזאת בדיוק התקלה שדווחה. */
+async function authSelectStudent(id,name){
+  const same=(id===authStudentId);
+  authStudentId=id; authStudentName=name; authRunId=null;
+  storeStudentChoice();
+  $("kidPicker").classList.add("hidden");
+  authSetErr4("");
+  if(!same){
+    clearProgress(); session=null;
+    resetAgePick();
+    await authPullLatest();      // ההרצה הפתוחה של הילד/ה הזה, אם יש
+  }
+  renderKidRow(); renderKidList();
+  refreshResumeBtn();
+  if(!same) showToast("עכשיו משחק/ת: "+name+" 🎮",2600);
 }
 /* game_runs נגיש להורה (RLS "השורה שלי"), ולכן חייב להכיל **רק** יומן
    גולמי — לא ציון/מדרגה/ודאות מחושבים. result על כל thread הוא בדיוק זה
@@ -603,7 +719,13 @@ async function authPushFinished(rep){
   for(let attempt=0;attempt<2;attempt++){
     try{
       const {error}=await sb.rpc("submit_report",{p_run_id:authRunId,p_report:rep});
-      if(!error) return;
+      if(!error){
+        /* ההרצה נסגרת ברגע שהמיפוי נגמר, כדי ש«להמשיך» של הילד/ה הזה לא
+           יציע בביקור הבא מפגש שכבר הסתיים (עולם הבונוס ממשיך לשמור state
+           לאותה שורה — רק הסטטוס משתנה). */
+        try{ await sb.from("game_runs").update({status:"finished"}).eq("id",authRunId); }catch(e2){}
+        return;
+      }
     }catch(e){}
     if(attempt===0) await new Promise(r=>setTimeout(r,2000));
   }
@@ -611,16 +733,22 @@ async function authPushFinished(rep){
 async function authPullLatest(){
   if(!sb||!authUser) return;
   try{
-    const {data}=await sb.from("game_runs").select("id,state,updated_at")
-      .eq("parent_id",authUser.id).eq("status","in_progress")
-      .order("updated_at",{ascending:false}).limit(1);
+    /* מסונן לפי הילד/ה הנבחר/ת: בלי זה ההורה של שני אחים קיבל תמיד את
+       ההרצה האחרונה בחשבון — כלומר את המשחק של האח/ות. */
+    const studentId=await authEnsureStudent();
+    let q=sb.from("game_runs").select("id,state,updated_at")
+      .eq("parent_id",authUser.id).eq("status","in_progress");
+    if(studentId) q=q.eq("student_id",studentId);
+    const {data}=await q.order("updated_at",{ascending:false}).limit(1);
+    let local=null;
+    try{ const raw=localStorage.getItem(SAVE_KEY); local=raw?JSON.parse(raw):null; }catch(e){}
     if(data&&data.length){
-      const row=data[0], cloud=Object.assign({},row.state,{runId:row.id});
-      let local=null;
-      try{ const raw=localStorage.getItem(SAVE_KEY); local=raw?JSON.parse(raw):null; }catch(e){}
+      const row=data[0], cloud=Object.assign({},row.state,{runId:row.id,studentId:studentId});
       if(!local||(cloud.ts||0)>=(local.ts||0)){
         try{ localStorage.setItem(SAVE_KEY,JSON.stringify(cloud)); }catch(e){}
       }
+    }else if(local&&studentId&&local.studentId&&local.studentId!==studentId){
+      clearProgress();   // השמירה במכשיר שייכת לאח/ות — לא «להמשיך» של הילד/ה הזה
     }
   }catch(e){}
   refreshResumeBtn();
@@ -719,14 +847,43 @@ async function authInit(){
     try{
       await sb.from("profiles").update({consent_given:true,consent_at:new Date().toISOString()})
         .eq("id",authUser.id);
-      authStudentId=null;
-      await authEnsureStudent(childName);
+      authStudentId=null; authStudentName=null;
+      await authLoadStudents();
+      const ex=authStudents.find(st=>st.name===childName);
+      const st=ex||await authCreateStudent(childName);
+      if(st){ authStudentId=st.id; authStudentName=st.name; storeStudentChoice(); }
     }catch(e){}
     await authRefreshGate();
     if(authUser) authPullLatest();
   };
-  $("authSignOut").onclick=async()=>{ try{ await sb.auth.signOut(); }catch(e){} };
+  $("authSignOut").onclick=async()=>{
+    try{ localStorage.removeItem(STUDENT_KEY); }catch(e){}
+    authStudentId=null; authStudentName=null; authStudents=[];
+    try{ await sb.auth.signOut(); }catch(e){}
+  };
   $("myReportsBtn").onclick=()=>showMyReports();
+  $("kidSwitchBtn").onclick=async()=>{
+    const box=$("kidPicker"), open=box.classList.contains("hidden");
+    authSetErr4("");
+    if(open){ await authLoadStudents(); renderKidList(); }
+    box.classList.toggle("hidden",!open);
+    if(open) $("kidNewName").focus({preventScroll:true});
+  };
+  $("kidCancel").onclick=()=>{ $("kidPicker").classList.add("hidden"); authSetErr4(""); };
+  $("kidAdd").onclick=async()=>{
+    authSetErr4("");
+    const name=$("kidNewName").value.trim();
+    if(!name){ authSetErr4("צריך למלא שם."); return; }
+    const dup=authStudents.find(st=>st.name===name);
+    if(dup){ authSetErr4("כבר יש ילד/ה בשם הזה — בחרו אותו/ה מהרשימה למעלה."); return; }
+    const b=$("kidAdd"); b.disabled=true; b.textContent="פותחים…";
+    const st=await authCreateStudent(name);
+    b.disabled=false; b.textContent="משחק חדש בשם הזה";
+    if(!st){ authSetErr4("לא הצלחנו לפתוח — נסו שוב בעוד רגע."); return; }
+    $("kidNewName").value="";
+    authStudentId=null;                 // כדי ש-authSelectStudent יזהה החלפה אמיתית
+    await authSelectStudent(st.id,st.name);
+  };
 }
 
 /* ---------- RTL math (הועתק מ-demo_template.html) ---------- */
@@ -1167,7 +1324,9 @@ function buildReport(){
   const skipped=["hebrew","math","english"].filter(s=>!covered.has(s));
   return {schema_version:SCHEMA_VERSION,
     placement:buildPlacement(),          // ← הפלט לשיבוץ לקבוצות (ראו buildPlacement)
-    student:{age:session.age||null, grade:session.grade,
+    /* השם נכנס לדוח עצמו (ולא רק לשורת students בענן) כדי שקובץ ה-JSON
+       המיוצא יידע של מי הוא — make_reports.py קורא בדיוק את student.name. */
+    student:{name:authStudentName||null, age:session.age||null, grade:session.grade,
       grade_from_age:session.age?gradeFromAge(session.age):null,
       grade_source:(session.age&&gradeFromAge(session.age)!==session.grade)?"child_override":"age"},
     source:"cube-quest-game", finished:new Date().toISOString(),
@@ -1708,6 +1867,7 @@ function buildSaveObj(){
   return {
     v:1, ts:Date.now(), age:session.age, grade:session.grade,
     runId:authRunId||null,                            // מזהה השורה בענן, אם מחוברים
+    studentId:authStudentId||null,                    // של מי השמירה הזאת (אחים באותו מכשיר)
     stageIdx:state.stageIdx+1,                        // ממשיכים מהעולם הבא
     candy:state.candy, cubesTotal:state.cubesTotal, stars:state.stars,
     elapsed:Math.round((Date.now()-session.startTs)/1000),
@@ -1730,7 +1890,12 @@ function saveProgress(){
 }
 function loadProgress(){
   try{ const s=localStorage.getItem(SAVE_KEY); const o=s?JSON.parse(s):null;
-       return (o&&o.v===1&&o.grade)?o:null; }catch(e){ return null; }
+       if(!(o&&o.v===1&&o.grade)) return null;
+       /* שמירה של אח/ות אחר/ת אינה «להמשיך» של הילד/ה הנוכחי/ת — בלי
+          התנאי הזה הכיתה של הראשון נדבקה לשני. שמירה ישנה בלי studentId
+          נחשבת שייכת (תאימות לאחור). */
+       if(sb&&authStudentId&&o.studentId&&o.studentId!==authStudentId) return null;
+       return o; }catch(e){ return null; }
 }
 function clearProgress(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 function resumeSession(sv){
@@ -1820,9 +1985,23 @@ function echoGrade(){
     `<button class="linklike" type="button" id="gradeFix">לא בכיתה ${GRADE_HE[pickedGrade]}?</button>`;
   $("gradeFix").onclick=()=>$("gradeFixRow").classList.add("on");
 }
+/* מחזיר את מסך הפתיחה למצב «עוד לא בחרו גיל» — נדרש במעבר בין אחים:
+   הגיל/הכיתה של הילד/ה הקודם/ת נשארו מסומנים ו«יוצאים לדרך» היה פעיל,
+   ולכן האח השני יצא לדרך עם הכיתה של הראשון. */
+function resetAgePick(){
+  pickedAge=null; pickedGrade=null;
+  const pick=$("agePick");
+  if(pick) [...pick.children].forEach(c=>c.classList.remove("sel"));
+  const echo=$("ageEcho");
+  if(echo) echo.textContent="בחרו גיל — ונתאים לכם את השאלות 🎯";
+  const fix=$("gradeFixRow"); if(fix) fix.classList.remove("on");
+  const st=$("startBtn"); if(st) st.disabled=true;
+}
 $("startBtn").onclick=()=>{
   if(!pickedGrade) return;
-  ac(); clearProgress();
+  /* משחק חדש = שורת הרצה חדשה בענן. בלי האיפוס הזה, אח שני שהתחיל משחק
+     דרס את ה-state של ההרצה של הראשון (authRunId נשאר מהמפגש הקודם). */
+  ac(); clearProgress(); authRunId=null;
   newSession(pickedGrade);
   initGame();
   $("introOv").classList.add("hidden");
@@ -1843,10 +2022,14 @@ $("repClose").onclick=()=>{ $("repOv").classList.add("hidden"); };
 async function showMyReports(){
   if(!sb||!authUser) return;
   try{
-    const {data,error}=await sb.from("reports").select("report")
-      .eq("parent_id",authUser.id).order("created_at",{ascending:false}).limit(1);
+    const studentId=await authEnsureStudent();
+    let q=sb.from("reports").select("report").eq("parent_id",authUser.id);
+    if(studentId) q=q.eq("student_id",studentId);   // הדוח של מי שמשחק/ת עכשיו, לא של האח/ות
+    const {data,error}=await q.order("created_at",{ascending:false}).limit(1);
     if(error) throw error;
-    if(!data||!data.length){ showToast("עדיין אין דוח שמור — צריך לסיים מיפוי קודם 🗺️",3000); return; }
+    if(!data||!data.length){
+      showToast((authStudentName?"עדיין אין דוח שמור ל"+authStudentName:"עדיין אין דוח שמור")+
+                " — צריך לסיים מיפוי קודם 🗺️",3000); return; }
     showReport(data[0].report);
   }catch(e){ showToast("לא הצלחנו לטעון את הדוח — לנסות שוב עוד רגע",3000); }
 }
