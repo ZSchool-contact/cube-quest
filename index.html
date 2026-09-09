@@ -111,6 +111,11 @@
   /* נוסחה לעולם לא נשברת בין שתי שורות; תרגיל שהוא לב השאלה מקבל שורה
      משלו, כמו בספר לימוד (fmtMath מסמן אותו class="mx"). */
   .qstem bdi,.qopt bdi{white-space:nowrap;}
+  .qstem .qask{display:block;margin-bottom:.35em;}
+  .qstem .vert{display:inline-block;direction:ltr;text-align:left;white-space:pre;
+    font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;font-variant-numeric:tabular-nums;
+    font-size:1.15em;line-height:1.45;background:#F3F6FB;border:1px solid #D8E0EC;
+    border-radius:10px;padding:10px 18px;}
   .qstem bdi.mx{display:block;text-align:center;margin:.5em auto .1em;font-size:1.06em;}
   /* אי של **טקסט** (גזע או אפשרות באנגלית) הוא לא נוסחה — הוא חייב להישבר
      לשורות. בלי זה משפט אנגלי שלם יושב באי אחד עם nowrap, גולש משני צדי
@@ -410,9 +415,9 @@
 <!-- מאגר השאלות, מקצוע לקובץ. נוצרים ע"י build_game.py ומוגשים לצד ה-HTML.
      `<script src>` ולא fetch/JSON — נמדד: fetch חסום מדף file:// וכל הבדיקות
      והמשחק המקומי נפתחים כך. הסדר כאן אינו קובע; המיזוג ממיין בעצמו. -->
-<script src="bank_hebrew.js"></script>
-<script src="bank_math.js"></script>
-<script src="bank_english.js"></script>
+<script src="bank8_hebrew.js"></script>
+<script src="bank8_math.js"></script>
+<script src="bank8_english.js"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -428,29 +433,33 @@
    grant() רק על תשובה נכונה. בסוף: דוח knowledge_state + אבחנות (JSON).
    ========================================================================= */
 
-const GAME_DATA={"world_threads":{"elementary":[{"thread":"heb_language","probe":null},{"thread":"heb_reading","probe":null},{"thread":"numbers","probe":"geometry"},{"thread":"operations","probe":null},{"thread":"fractions","probe":null},{"thread":"eng_words","probe":null},{"thread":"eng_reading","probe":null},{"thread":null,"probe":null}],"middle":[{"thread":"heb_language","probe":null},{"thread":"heb_reading","probe":null},{"thread":"numbers","probe":null},{"thread":"algebra","probe":null},{"thread":"geometry","probe":null},{"thread":"eng_words","probe":null},{"thread":"eng_reading","probe":null},{"thread":null,"probe":null}]},"subject_he":{"hebrew":"עברית","math":"מתמטיקה","english":"אנגלית"},"thread_order":["heb_reading","heb_language","eng_words","eng_reading","numbers","operations","fractions","algebra","geometry"]};
+const GAME_DATA={};
 /* מיזוג שלושת קובצי המאגר לתוך GAME_DATA. שאר הקוד ממשיך לקרוא
    GAME_DATA.threads / GAME_DATA.questions בדיוק כמו קודם — הפיצול הוא
    בקבצים, לא בממשק. הסדר משוחזר במפורש: השרשראות לפי thread_order (הסדר
    שהמנוע נבנה סביבו) והשאלות לפי question_id, כך שהתוצאה זהה לבנייה
    המוטבעת שקדמה לה ובחירת השאלה נשארת יציבה בין בניות. */
 (function mergeBank(){
-  const B=window.QBANK||{}, subjects=["hebrew","math","english"];
+  /* מאגר הליבה: שלושה קבצים, שרשרת אחת לכל מקצוע, תחנה = כיתה שלמה.
+     המטא (מסלול העולמות) נוסע עם הקובץ העברי — הראשון שנטען. */
+  const B=window.QBANK8||{}, subjects=["hebrew","math","english"];
   const threads=[], questions=[], missing=[];
   for(const s of subjects){
     const b=B[s];
     if(!b||!b.threads||!b.questions){ missing.push(s); continue; }
     threads.push(...b.threads); questions.push(...b.questions);
+    if(b.meta){ GAME_DATA.world_plan=b.meta.world_plan; GAME_DATA.subject_he=b.meta.subject_he; }
   }
-  const pos=new Map((GAME_DATA.thread_order||[]).map((id,i)=>[id,i]));
-  threads.sort((a,b)=>(pos.has(a.id)?pos.get(a.id):1e9)-(pos.has(b.id)?pos.get(b.id):1e9));
-  questions.sort((a,b)=>a.question_id<b.question_id?-1:a.question_id>b.question_id?1:0);
+  const pos=new Map(subjects.map((id,i)=>[id,i]));
+  threads.sort((a,b)=>pos.get(a.id)-pos.get(b.id));
   GAME_DATA.threads=threads; GAME_DATA.questions=questions;
-  /* מקצוע חסר אינו קורס בשקט: בלי הקבצים המשחק היה נפתח ומגיש עולם ריק,
-     והילד היה אוסף קוביות בלי שאלה אחת — כישלון שנראה כמו הצלחה. */
+  /* אינדקס לפי מזהה: התחנה מחזיקה רשימת מזהים בסדר עדיפות, והשליפה
+     מתוכה חייבת להיות O(1) ולא סריקה של המאגר בכל שאלה. */
+  GAME_DATA.byId={};
+  for(const q of questions) GAME_DATA.byId[q.question_id]=q;
   if(missing.length){
     GAME_DATA.bank_missing=missing;
-    console.error("קובצי מאגר חסרים: "+missing.map(s=>"bank_"+s+".js").join(", "));
+    console.error("קובצי מאגר חסרים: "+missing.map(s=>"bank8_"+s+".js").join(", "));
   }
 })();
 
@@ -980,29 +989,141 @@ const gradeFromAge=a=>Math.max(1,Math.min(9,a-5));
 const threadById=id=>GAME_DATA.threads.find(t=>t.id===id);
 const SUBJ_EMOJI={hebrew:"📚",math:"🔢",english:"🔤"};
 
-const eligibleNodes=(cfg,grade)=>cfg?cfg.nodes.filter(n=>n.g0<=grade):[];
-const nodeIdxFor=(nodes,g)=>{let best=0;for(let i=0;i<nodes.length;i++) if(nodes[i].g0<=g) best=i; return best;};
+/* ============================ מנוע התחנות ============================
+   כיתה = תחנה אחת (ולא שלוש מדרגות). בתחנה שולפים שאלות מתוך השמונה של
+   אותה כיתה **לפי סדר העדיפות שבמפרט** — לא בהגרלה. שמונה השאלות פרוסות
+   על תחומי ליבה שונים, ולכן 3–4 שאלות בתחנה הן 3–4 תחומים, ופרופיל
+   התחומים נגזר מהחיפוש עצמו בלי שלב נפרד.
+
+   הכלל (החלטת שני, שיחה 13, אחרי סימולציה על המפגשים השמורים):
+     3 נכונות בתחנה  → עולים כיתה
+     טעות ראשונה     → שאלה נוספת מאותה תחנה
+     טעות שנייה      → יורדים כיתה
+     שתי תחנות כושלות ברצף → יורדים שתיים (ירידה מאיצה)
+   התחנה נסגרת אחרי 4 שאלות לכל היותר. ההאצה נמדדה: בלעדיה ילד/ה שנמצא/ת
+   שלוש כיתות מתחת מבזבז/ת שש שאלות רק על הירידה, והסטייה קופצת ל-2.39.
+   ==================================================================== */
+const GOOD_TO_PASS=3, BAD_TO_DROP=2, MIN_AT_STATION=3;
+/* **מינימום שלוש שאלות בתחנה לפני ירידה** (משוב משחק, שני): בלי זה שתי
+   טעויות רצופות הפילו כיתה שלמה אחרי שתי שאלות בלבד, וזה מרגיש רדוד —
+   ונשען על ראיה דקה מדי. עכשיו כל תחנה מקבלת 3–4 שאלות, בשני הכיוונים. */
+const eligibleStations=(cfg,grade)=>cfg?cfg.stations.filter(st=>st.grade_from<=grade):[];
 
 function newThread(cfg,grade){
-  const nodes=eligibleNodes(cfg,grade);     // אין בדיקה בנושא שטרם התחיל להילמד
-  if(!nodes.length) return null;
-  const startIdx=nodeIdxFor(nodes,Math.max(1,grade-1));
-  const rung=(grade<=1&&nodes[0].g0>=grade)?0:startIdx*3+1;   // רמת ליבה של המדרגה הקודמת
-  const ceil=nodeIdxFor(nodes,grade)*3+2;
-  /* מדרגת אתגר — מדרגה אחת מעל תקרת הכיתה, ברמת הכניסה של המדרגה הבאה.
-     בלי זה תלמיד שעבר את כל מדרגות כיתתו נסגר ב-"ceiling" ורמתו האמיתית
-     לעולם אינה נמדדת: ילד כיתה ה׳ ברמת ז׳ נראה זהה לילד כיתה ה׳ ברמת ה׳.
-     האתגר הוא **בונוס בלבד**: הצלחה מסמנת «מעל התקרה», כישלון אינו מוריד
-     מדרגה ואינו נרשם כנפילה. שאלה אחת, בלי ניסיון שני. */
-  const next=cfg.nodes.find(n=>n.g0>grade);
-  if(next) nodes.push(next);
-  return {cfg,nodes,rung,startRung:rung,ceil,
-          chalRung:next?ceil+1:null,challenge:false,challengePassed:false,
-          passed:new Set(),failed:new Set(),
-          secondTry:false,done:false,result:null,asked:0};
+  const st=eligibleStations(cfg,grade);
+  if(!st.length) return null;              // אנגלית בכיתות א׳–ב׳: העולם נשמט
+  /* התחנות שמעל כיתת הילד/ה נשמרות בצד. הן אינן בסולם הרגיל — הכניסה
+     אליהן היא דרך שאלת הבונוס בלבד, ורק אם היא נענתה נכון. */
+  const above=cfg.stations.slice(st.length);
+  /* תחנת הפתיחה: האחרונה שהילד/ה כבר **סיים/ה** ללמוד. לא הכיתה עצמה —
+     כדי שהשאלה הראשונה תהיה כזו שאפשר לענות עליה. */
+  let start=0;
+  for(let i=0;i<st.length;i++) if(st[i].grade_to<grade) start=i;
+  const chal=above[0]||null;                 // תחנת בונוס אחת מעל התקרה
+  return {cfg,st,above,chalSt:chal,idx:start,startIdx:start,ceil:st.length-1,
+          good:0,bad:0,failStreak:0,challenge:false,challengePassed:false,
+          passed:new Set(),failed:new Set(),done:false,result:null,asked:0};
 }
-/* בדיקה קצרה (probe) — נושא שאינו ליבה (גאומטריה ביסודי): 1–2 שאלות בעולם
-   המתמטיקה הראשון, בלי סולם מלא. מטרתה סימון דגל («כדאי לבדוק») ולא מיפוי. */
+const stationAt=(T,i)=>T.st[i]||null;
+const curStation=T=>!T?null:(T.challenge?T.chalSt:stationAt(T,T.idx));
+function stationPool(T,station){
+  if(!station) return [];
+  return station.question_ids.map(id=>GAME_DATA.byId[id])
+    .filter(q=>q&&!session.used.has(q.question_id));
+}
+/* בלי הגרלה: הסדר במפרט הוא סדר העדיפות, ולכן המיפוי חוזר על עצמו
+   בין ילדים ובין הרצות — וזו בדיוק הסיבה שצמצמנו את המאגר. */
+function pickQuestion(T){ const p=stationPool(T,curStation(T)); return p.length?p[0]:null; }
+
+/* אחרי שהסולם נסגר נשארות לרוב שאלות בתחנת הגבול, ולמקצוע נשארים עולמות.
+   במקום לתת קוביות חינם, שואלים אותן כ**שאלות פרופיל**: הן ממפות עוד תחומי
+   ליבה באותה רמה בדיוק, ואינן משנות את הרמה שנמצאה. זה מה שהופך «כיתה ג׳»
+   ל«כיתה ג׳, ובתוכה כפל תקין ושברים חלשים». */
+/* המכסה היא **לכל עולם** ולא לכל מקצוע: אחרת העולם השלישי של מתמטיקה
+   נשאר בלי שאלה אחת, כפי שקרה במשחק אמיתי. */
+const PROFILE_MAX=4;
+function profileQuestion(T){
+  if(!T||!T.result) return null;
+  const w=state.stageIdx||0;
+  if(((T.pfByWorld||{})[w]||0)>=PROFILE_MAX) return null;
+  const b=T.result.boundary?T.result.boundary.station:-1;
+  /* סורקים מהגבול כלפי מטה: כל תחנה שנמדדה עשויה להחזיק עוד תחומים
+     שלא נגענו בהם, וזה בדיוק מה שממלא את העולמות הנוספים של המקצוע. */
+  const order=[]; for(let k=b;k>=Math.max(0,b-2);k--) order.push(k);
+  for(const i of order){
+    if(i<0||i>=T.st.length) continue;
+    const p=stationPool(T,T.st[i]);
+    if(p.length) return {q:p[0],station:i};
+  }
+  return null;
+}
+function ownThread(){
+  if(!session) return null;
+  const p=stageInfo();
+  if(p&&p.thread) return session.byId[p.thread];
+  /* עולם הבונוס נשאר פרס — **אלא אם כן נשארה שרשרת שלא הספיקה להימדד**.
+     נמדד: ילד/ה בכיתה ט׳ שנמצא/ת ברמת כיתה ב׳ בעברית צריך/ה יותר שאלות
+     ממה ששני עולמות מספקים, והשרשרת נסגרה כ«לא נמדד» — כלומר בלי מידע.
+     במקרה כזה הבונוס נפרע לטובת המדידה; לילד/ה שנמדד/ה הוא נשאר חופשי. */
+  return session.threads.find(T=>!T.done)||null;
+}
+function activeThread(){
+  if(!session) return null;
+  const p=stageInfo();
+  if(!p||!p.thread) return null;
+  const own=session.byId[p.thread];
+  return (own&&!own.done)?own:null;
+}
+function threadPass(T){
+  if(T.challenge){
+    /* **התקרה נפתחת.** קודם שאלת בונוס נכונה סגרה את השרשרת ורשמה דגל
+       «מעל התקרה» בלבד, ולכן ילד/ה חזק/ה נראה/ית זהה לילד/ה בדיוק בכיתתו/ה
+       (נצפה במשחק: «עניתי נכון על הכול והרמה נשארה אחת מעל»). עכשיו תשובה
+       נכונה בבונוס **מצרפת את התחנה לסולם** וממשיכים לטפס בכלל הרגיל —
+       3 נכונות לכיתה. תשובה שגויה בבונוס עדיין רק סוגרת, בלי עונש. */
+    T.challengePassed=true;
+    T.challenge=false;
+    const nx=T.above.shift();
+    if(nx){
+      T.st.push(nx); T.ceil=T.st.length-1; T.idx=T.ceil;
+      T.chalSt=T.above[0]||null;
+      /* **הבונוס אינו נרשם ב-passed** — כלל קיים בפרויקט: מדרגה שנרשמה על
+         תשובה יחידה מקפיצה את maxPassed ומזכה בכיתה שלמה על תצפית אחת.
+         הוא נספר כתשובה הראשונה מתוך שלוש, ותו לא. */
+      T.good=1; T.bad=0;
+      if(T.chalSt&&stationPool(T,T.chalSt).length) return;   // ממשיכים
+    }
+    finishThread(T,"above_ceiling"); return;
+  }
+  T.passed.add(T.idx); T.good=0; T.bad=0; T.failStreak=0;
+  if(T.idx>=T.ceil){
+    if(T.chalSt&&stationPool(T,T.chalSt).length){ T.challenge=true; return; }
+    finishThread(T,"ceiling"); return;
+  }
+  if(T.failed.has(T.idx+1)){ finishThread(T,"boundary"); return; }
+  T.idx++;
+}
+function threadFail(T){
+  T.failed.add(T.idx); T.good=0; T.bad=0; T.failStreak++;
+  if(T.idx===0){ finishThread(T,"boundary"); return; }        // מתחת לרצפה
+  if(T.passed.has(T.idx-1)){ finishThread(T,"boundary"); return; }
+  /* ההאצה בוטלה אחרי משחק אמיתי: היא הורידה מכיתה ג׳ לכיתה א׳ בארבע
+     שאלות והרגישה כאילו המשחק ויתר על הילד. עם מינימום 3 שאלות בתחנה
+     ותקציב של שלושה עולמות למתמטיקה, ירידה של כיתה אחת בכל פעם נכנסת
+     בנוחות ומשאירה את המסלול קריא. */
+  /* ירידה של כיתה אחת — **אלא אם כן כבר נכשלו שלוש תחנות ברצף**. הגרסה
+     שהאיצה מיד הרגישה כאילו המשחק ויתר (משוב משחק, שני), והגרסה בלי האצה
+     בכלל לא הספיקה להגיע לילד/ה בכיתה ט׳ שנמצא/ת ברמת כיתה ג׳ — התקציב
+     נגמר באמצע הירידה והשרשרת נסגרה כ«לא נמדד». שלוש תחנות = תשע שאלות
+     של מאמץ גלוי לפני שהמנוע מדלג. */
+  const step=T.failStreak>=3?2:1;
+  let n=Math.max(0,T.idx-step);
+  while(n<T.idx&&T.passed.has(n)) n++;
+  if(n>=T.idx){ finishThread(T,"boundary"); return; }
+  T.idx=n;
+}
+/* הבדיקה הקצרה (probe) בוטלה: השרשרת היחידה של מתמטיקה נוגעת ממילא בכל
+   תחומי הליבה, כולל גאומטריה, ולכן אין מה לבדוק בנפרד. */
 function newProbe(cfg,grade){
   const nodes=eligibleNodes(cfg,grade);
   if(!nodes.length) return null;
@@ -1014,7 +1135,9 @@ function newProbe(cfg,grade){
    מפילה את העולם שלה מהמסלול — הילד פשוט משחק 6 עולמות במקום 8. */
 function newSession(grade){
   const stage=grade>=7?"middle":"elementary";
-  const spec=GAME_DATA.world_threads[stage];
+  /* מסלול אחד לשתי החטיבות: התחנות מסוננות ממילא לפי כיתת הילד/ה,
+     ולכן אין צורך בשני מסלולים. */
+  const spec=(GAME_DATA.world_plan||[]).map(sub=>({thread:sub,probe:null}));
   const threads=[], byId={}, plan=[];
   let probeCfgId=null;
   spec.forEach((s,i)=>{
@@ -1032,86 +1155,17 @@ function newSession(grade){
   });
   session={grade,age:pickedAge,stage,startTs:Date.now(),asked:0,answers:[],diagnoses:[],results:[],
            used:new Set(),reportReady:false,threads,byId,plan,stars:0,starsTotal:plan.length,
-           probe:probeCfgId?newProbe(threadById(probeCfgId),grade):null};
+           probe:null};
 }
 /* לפני שנבחרה כיתה (מסך הפתיחה) מוצג עולם 1 כרקע — מסלול ברירת מחדל בלי שאלות */
 const defaultPlan=()=>WORLDS.map((w,i)=>({w:i,thread:null,probe:null,subject:null,subjectHe:null}));
 const curPlan=()=>session?session.plan:defaultPlan();
 function stageInfo(){ const p=curPlan(); return p[Math.min(state.stageIdx||0,p.length-1)]||null; }
-function probePool(){
-  const P=session&&session.probe; if(!P||P.done) return [];
-  const n=P.nodes[P.idx]; if(!n) return [];
-  return GAME_DATA.questions.filter(q=>n.topics.indexOf(q.topic_id)>=0&&q.level===P.level&&!session.used.has(q.question_id));
-}
-/* מתי מגישים את הבדיקה הקצרה: רק בעולם שסומן לכך במסלול (עולם המתמטיקה
-   הראשון), אחרי שהשרשרת המרכזית כבר התחילה, ולא שתי שאלות probe בזו אחר זו. */
-function probeDue(){
-  const P=session&&session.probe;
-  if(!P||P.done) return false;
-  const p=stageInfo();
-  if(!p||!p.probe) return false;
-  const T=activeThread();
-  if(T&&T.asked<2) return false;
-  if(session.asked-P.lastAt<2) return false;
-  return probePool().length>0;
-}
-const rungNode=(T,r)=>T.nodes[Math.floor(r/3)], rungLevel=r=>r%3+1;
-function poolAt(T,r){
-  const n=rungNode(T,r); if(!n) return [];
-  const L=rungLevel(r);
-  return GAME_DATA.questions.filter(q=>n.topics.indexOf(q.topic_id)>=0&&q.level===L&&!session.used.has(q.question_id));
-}
-function pickQuestion(T){const p=poolAt(T,T.rung);return p.length?p[Math.floor(Math.random()*p.length)]:null;}
-/* מדרגה שנגמרו בה השאלות אינה סוף השרשרת — יורדים מדרגה ומנסים למדוד שם
-   (המדרגה הריקה תיוותר "לא נבדקה" בדוח, וזו הצגה נכונה של המציאות). */
-function pickQuestionOrShift(T){
-  for(let k=0;k<3;k++){
-    const q=pickQuestion(T);
-    if(q) return q;
-    if(T.rung===0) return null;
-    T.rung--;
-  }
-  return null;
-}
-/* לכל עולם שרשרת משלו — «בכל עולם נושא אחר». כשהשרשרת של העולם מוצתה
-   (נמצא גבול הידע) שאר הקוביות בעולם נפתחות חינם: פרס, לא חקירה.
-   עולם הבונוס (thread=null) הוא משחק טהור — כל הקוביות חופשיות. */
-function activeThread(){
-  if(!session) return null;
-  const p=stageInfo();
-  if(!p||!p.thread) return null;
-  const own=session.byId[p.thread];
-  return (own&&!own.done)?own:null;
-}
-function threadPass(T){
-  /* שאלת האתגר אינה נרשמת ב-passed במכוון: אילו נרשמה, maxPassed היה עולה
-     מעל התקרה והדוח היה קובע רמה של כיתה שלמה מעלה על סמך תשובה אחת —
-     בדיוק הניפוח שהאסימטריה עלייה/ירידה נועדה למנוע. */
-  if(T.challenge){ T.challengePassed=true; finishThread(T,"above_ceiling"); return; }
-  T.passed.add(T.rung); T.secondTry=false; T.failStreak=0;
-  if(T.rung>=T.ceil){                             // עבר הכול עד תקרת הכיתה
-    if(T.chalRung!=null&&poolAt(T,T.chalRung).length){
-      T.challenge=true; T.rung=T.chalRung; T.secondTry=false; return;   // שאלת אתגר אחת
-    }
-    finishThread(T,"ceiling");                    // אין תוכן מעל — הגבול לא נמדד
-  }
-  else if(T.failed.has(T.rung+1)) finishThread(T,"boundary");
-  else T.rung++;                                  // עלייה תמיד מדרגה אחת — דיוק סביב הגבול
-}
-/* ירידה: מדרגה אחת אחרי כישלון בודד, אבל אחרי שתי נפילות רצופות יורדים
-   כיתה שלמה (3 מדרגות). בלי זה, תלמיד כיתה ה' שנמצא ברמת כיתה א' עובר
-   ~22 שאלות של כישלון רצוף עד שמגיעים אליו — בדיוק ההפך מ«כישלון רך».
-   הדיוק נשמר: הטיפוס חזרה מעלה נעשה מדרגה-מדרגה. */
-function threadFail(T){
-  T.failed.add(T.rung); T.secondTry=false;
-  T.failStreak=(T.failStreak||0)+1;
-  if(T.rung===0||T.passed.has(T.rung-1)){ finishThread(T,"boundary"); return; }
-  const step=T.failStreak>=2?3:1;
-  let r=Math.max(0,T.rung-step);
-  while(r<T.rung&&T.passed.has(r)) r++;
-  if(r>=T.rung){ finishThread(T,"boundary"); return; }   // אין לאן לרדת — נמצא הגבול
-  T.rung=r;
-}
+/* הבדיקה הקצרה בוטלה עם מעבר לשרשרת אחת למקצוע — ראו ההערה למעלה.
+   הפונקציות נשארות כ-no-op כדי שכל אתרי הקריאה ימשיכו לעבוד. */
+function probePool(){ return []; }
+function probeDue(){ return false; }
+
 
 /* ---------- ראיות ומהימנות ----------
    כל מסקנה בדוח צריכה לשאת איתה את הבסיס שעליו היא נשענת. בלי זה «שליטה
@@ -1121,21 +1175,18 @@ const FAST_SEC=3;          // תשובה נכונה מהירה מזה — חשד
 const SLOW_SEC=150;        // תשובה שארכה יותר מזה — הפסקה או עזרה מבחוץ
 const EV0=()=>({asked:0,correct:0,skipped:0,second_try:0,no_retry:0,fast_correct:0,slow:0});
 /* נגזר מיומן התשובות ולא ממונים במנוע — כך זה שורד שמירה והמשך בין עולמות. */
-function rungEvidence(T){
+function stationEvidence(T){
   const ev={};
   session.answers.forEach(a=>{
-    /* שאלת האתגר מוחרגת מהראיות: היא מעל התקרה ואינה חלק מהמדידה. אילו
-       נכללה, כישלון בבונוס (עם pool_left=0) היה מדליק no_retry ומוריד את
-       הוודאות של כל השרשרת — ענישה על שאלה שנוספה כפרס. */
-    if(a.mode!=="thread"||a.thread!==T.cfg.id||a.rung==null||a.challenge) return;
-    const e=ev[a.rung]||(ev[a.rung]=EV0());
+    /* שאלת הבונוס מוחרגת מהראיות: היא מעל התקרה ואינה חלק מהמדידה. */
+    if(a.mode!=="thread"||a.thread!==T.cfg.id||a.station==null||a.challenge) return;
+    const e=ev[a.station]||(ev[a.station]=EV0());
     e.asked++;
     if(a.correct) e.correct++;
     if(a.skipped) e.skipped++;
-    if(a.second_try) e.second_try++;
-    /* טעות שלא היה אחריה ניסיון שני כי אזלו השאלות במדרגה — המדרגה נרשמה
-       כנכשלה על תצפית יחידה, וזו ראיה חלשה בהרבה מהתקן של שתי נפילות. */
-    if(!a.correct&&!a.second_try&&a.pool_left===0) e.no_retry++;
+    /* טעות שאחריה לא נותרה שאלה בתחנה — התחנה הוכרעה על פחות ראיות
+       ממה שהכלל דורש, וזו ודאות נמוכה ולא ממצא. */
+    if(!a.correct&&a.pool_left===0) e.no_retry++;
     if(a.correct&&a.seconds<=FAST_SEC) e.fast_correct++;
     if(a.seconds>=SLOW_SEC) e.slow++;
   });
@@ -1143,95 +1194,91 @@ function rungEvidence(T){
 }
 const evSum=(ev,keys)=>{const o=EV0();keys.forEach(r=>{const e=ev[r];if(!e)return;
   for(const k in o) o[k]+=e[k];});return o;};
-/* דרגת ודאות — כלל מפורש ודטרמיניסטי, כדי שמי שמשבץ לקבוצה יידע על מה
-   ההמלצה נשענת ומתי לא לסמוך עליה:
-     none   — לא נמדדה אף מדרגה (המקצוע לא נבדק בפועל)
-     low    — השרשרת נקטעה (אזל המאגר / המפגש נגמר), או שמדרגה הוכרעה
-              על תצפית יחידה מחוסר שאלות
-     medium — נמדד, אך הגבול לא אושר כנדרש, או שיש חשד לניחוש מהיר
-     high   — מעבר במדרגה + שתי נפילות במדרגה שמעליה, בלי דגלים */
+/* דרגת ודאות — כלל מפורש ודטרמיניסטי:
+     none   — לא נמדדה אף תחנה
+     low    — השרשרת נקטעה, או שתחנה הוכרעה בלי מספיק שאלות במאגר
+     medium — נמדד, אך הגבול לא אושר בשתי טעויות בתחנה שמעליו
+     high   — מעבר בתחנה + שתי טעויות בתחנה שמעליה, בלי דגלים */
 function threadConfidence(ev,maxPassed,reason,belowFloor){
   const all=evSum(ev,Object.keys(ev));
   if(!all.asked) return "none";
   if(reason==="bank_exhausted"||reason==="session_ended") return "low";
   if(all.no_retry) return "low";
-  /* «לפחות עד התקרה» — הגבול עצמו לא נמדד. גם above_ceiling הוא medium:
-     שאלת אתגר אחת מוכיחה שיש עוד מעל, לא כמה. */
   if(reason==="ceiling"||reason==="above_ceiling") return "medium";
   const above=ev[maxPassed+1];
-  /* מתחת לרצפה: אין מדרגה שעברה, אבל שתי נפילות במדרגה הראשונה הן מדידה
-     מוצקה בדיוק כמו גבול רגיל — וזה הילד שהכי חשוב לא לפספס. */
-  const confirmed=belowFloor?(ev[0]&&ev[0].asked>=2&&ev[0].correct===0)
-                            :(maxPassed>=0&&above&&above.asked>=2&&above.correct===0);
+  const confirmed=belowFloor
+    ?(ev[0]&&(ev[0].asked-ev[0].correct)>=BAD_TO_DROP)
+    :(maxPassed>=0&&above&&(above.asked-above.correct)>=BAD_TO_DROP);
   if(!confirmed) return "medium";
   return all.fast_correct?"medium":"high";
 }
 function finishThread(T,reason){
-  /* T.result חסר למרות T.done=true קורה אחרי resume ממכשיר אחר: game_runs
-     בענן לא מכיל result (מחושב, admin-only — ראו stripAdminFields), רק
-     rung/passed/failed/endReason גולמיים. אלה בדיוק הקלט שממנו הפונקציה
-     הזאת גוזרת result מלכתחילה (ראו הערת rungEvidence), אז recompute מלא
-     תקין ונאמן למקור — לא ניחוש. */
   if(T.done&&T.result) return;
   T.done=true;
   T.endReason=T.endReason||reason||"boundary";
-  const N=T.ceil+1;
-  let maxPassed=-1; T.passed.forEach(r=>maxPassed=Math.max(maxPassed,r));
-  let minFailed=1e9; T.failed.forEach(r=>minFailed=Math.min(minFailed,r));
-  const rungs=[];
-  for(let r=0;r<N;r++){
-    if(T.passed.has(r)) rungs.push("passed");
-    else if(T.failed.has(r)) rungs.push("failed");
-    else if(r<maxPassed) rungs.push("inferred-pass");
-    else if(r>minFailed) rungs.push("inferred-fail");
-    else rungs.push("untested");
+  const N=T.st.length;
+  let maxPassed=-1; T.passed.forEach(i=>maxPassed=Math.max(maxPassed,i));
+  let minFailed=1e9; T.failed.forEach(i=>minFailed=Math.min(minFailed,i));
+  const ev=stationEvidence(T);
+  const states=[];
+  for(let i=0;i<N;i++){
+    if(T.passed.has(i)) states.push("passed");
+    else if(T.failed.has(i)) states.push("failed");
+    else if(i<maxPassed) states.push("inferred-pass");
+    else if(i>minFailed) states.push("inferred-fail");
+    else states.push("untested");
   }
-  /* הציון מנורמל לתקרת הכיתה של התלמיד עצמו, ולכן הוא **אינו בר-השוואה**
-     בין תלמידים בכיתות שונות. להשוואה ולשיבוץ לקבוצות משתמשים ב-boundary
-     (מדרגת הגבול המוחלטת) שמחושבת מייד אחריו. */
-  const score=Math.round(rungs.filter(s=>s==="passed"||s==="inferred-pass").length/N*100);
-  const ev=rungEvidence(T);
+  const score=Math.round(states.filter(x=>x==="passed"||x==="inferred-pass").length/N*100);
+  /* פרופיל התחומים — הציר שהדוח למלווה מדבר בו. הוא נגזר מהחיפוש עצמו:
+     שמונה השאלות של כל כיתה פרוסות על תחומים שונים, ולכן כל תשובה נושאת
+     תחום, ואין צורך בשלב מדידה נפרד. */
+  const areasMap={};
+  session.answers.forEach(a=>{
+    if(a.mode!=="thread"||a.thread!==T.cfg.id||!a.area||a.challenge) return;
+    const A=areasMap[a.area]||(areasMap[a.area]={area:a.area,area_he:a.area_he||a.area,
+                                                asked:0,correct:0,top_grade:null,focus:[]});
+    A.asked++;
+    if(a.focus_he&&A.focus.indexOf(a.focus_he)<0) A.focus.push(a.focus_he);
+    if(a.correct){ A.correct++; if(A.top_grade==null||a.grade>A.top_grade) A.top_grade=a.grade; }
+  });
   const nodesOut=[];
-  for(let i=0;i<N/3;i++){
-    const n=T.nodes[i]; let lvl=0,measured=false,anyFail=false,anyInfo=false;
-    for(let L=1;L<=3;L++){
-      const s=rungs[i*3+L-1];
-      if(s!=="untested") anyInfo=true;
-      if(s==="passed"||s==="failed") measured=true;
-      if(s==="passed"||s==="inferred-pass") lvl=L;
-      if(s==="failed"||s==="inferred-fail") anyFail=true;
-    }
-    const e=evSum(ev,[i*3,i*3+1,i*3+2]);
-    /* «נבדק אך לא היה מה לשאול» — מצב רביעי לצד נמדד/הוסק: המדרגה מסומנת
-       כנכשלה, אך רק מפני שהמאגר היה ריק ולא ניתן היה לשאול ניסיון שני. */
-    const status=!anyInfo?"not_assessed":lvl===0?(anyFail?"below_basic":"not_assessed"):lvl===1?"basic":lvl===2?"core":"advanced";
-    nodesOut.push({grade:n.grade,g0:n.g0,tag:n.tag,label:n.label,topic_ids:n.topics,
-                   level_reached:lvl,status,measured,evidence:e,thin_evidence:e.no_retry>0||(measured&&e.asked<2)});
+  for(let i=0;i<N;i++){
+    const st=T.st[i], e=ev[i]||EV0(), x=states[i];
+    const held=(x==="passed"||x==="inferred-pass");
+    nodesOut.push({grade:st.grade_to, g0:st.grade_from, tag:st.tag, label:T.cfg.name,
+                   level_id:st.level_id, topic_ids:[],
+                   level_reached:held?2:0,
+                   status:x==="untested"?"not_assessed":(held?"core":"below_basic"),
+                   measured:(x==="passed"||x==="failed"), evidence:e,
+                   thin_evidence:e.no_retry>0||(x==="passed"&&e.asked<GOOD_TO_PASS)});
   }
-  /* מדרגת הגבול — הערך היחיד בדוח שהוא מוחלט ובר-השוואה בין תלמידים.
-     זהו מפתח השיבוץ לקבוצות; הציון אינו. */
-  const bNode=maxPassed>=0?T.nodes[Math.floor(maxPassed/3)]:null;
-  const boundary=bNode?{rung:maxPassed,grade:bNode.grade,g0:bNode.g0,tag:bNode.tag,
-                        label:bNode.label,level:maxPassed%3+1}:null;
+  const bSt=maxPassed>=0?T.st[maxPassed]:null;
+  const boundary=bSt?{station:maxPassed,grade:bSt.grade_to,g0:bSt.grade_from,tag:bSt.tag,
+                      label:T.cfg.name,level_id:bSt.level_id,level:null}:null;
   const evAll=evSum(ev,Object.keys(ev));
-  /* נכשל כבר במדרגה הראשונה של השרשרת: נמדד — אך מתחת לרצפת הסולם. בלי
-     ההבחנה הזאת הוא נראה בפלט כמו «לא נבדק», והוא הילד שהכי חשוב לאתר. */
   const belowFloor=maxPassed<0&&evAll.asked>0;
-  /* ערך מספרי יחיד למיון בין תלמידים: כיתת הגבול + שליש לכל רמה בתוכה.
-     מתחת לרצפה מקבל חצי מדרגה מתחת לנושא הראשון, כדי שיישאר בר-מיון. */
-  const levelValue=boundary?Math.round((boundary.grade+(boundary.level-1)/3)*100)/100
-                   :belowFloor?T.nodes[0].grade-0.5:null;
+  /* level_value — הערך היחיד שמותר להשוות בין תלמידים: הכיתה שנמצאה ועוד
+     השבר של מה שנענה נכון בכיתה שמעליה. זה מחליף את «שליש הכיתה» של המנוע
+     הישן, שאיבד משמעות כשכיתה הפכה לתחנה אחת. **דוחות שנוצרו לפני השינוי
+     יושבים על סרגל אחר ואינם ברי-השוואה** — ראו scale ב-buildReport. */
+  let levelValue=null;
+  if(bSt){
+    const nx=ev[maxPassed+1];
+    const frac=(nx&&nx.asked)?Math.min(0.99,nx.correct/nx.asked):0;
+    levelValue=Math.round((bSt.grade_to+frac)*100)/100;
+  } else if(belowFloor){
+    levelValue=T.st[0].grade_to-0.5;
+  }
   T.result={thread:T.cfg.id,subject:T.cfg.subject,subject_he:T.cfg.subject_he,
-            name:T.cfg.name,score,rungs,nodes:nodesOut,questions_asked:T.asked,
+            name:T.cfg.name,score,states,nodes:nodesOut,questions_asked:T.asked,
+            areas:Object.keys(areasMap).map(k=>areasMap[k]),
             end_reason:T.endReason, boundary, below_floor:belowFloor, level_value:levelValue,
             at_or_above_ceiling:T.endReason==="ceiling"||T.endReason==="above_ceiling",
-            /* עבר שאלת אתגר מעל תקרת כיתתו. דגל מצוינות — **לא** רמה:
-               הרמה נשארת בגבול שנמדד, כי תצפית אחת אינה מדידה. */
             above_ceiling:!!T.challengePassed,
-            challenge_asked:T.chalRung!=null&&(T.challenge||T.challengePassed),
-            start_rung:T.startRung, ceiling_rung:T.ceil,
+            challenge_asked:!!T.chalSt&&(T.challenge||T.challengePassed),
+            start_station:T.startIdx, ceiling_station:T.ceil,
             confidence:threadConfidence(ev,maxPassed,T.endReason,belowFloor),
-            evidence:evAll, rung_evidence:ev};
+            evidence:evAll, station_evidence:ev};
   session.results.push(T.result);
   if(!session.reportReady&&session.threads.every(x=>x.done)){
     session.reportReady=true;
@@ -1246,7 +1293,12 @@ function finishThread(T,reason){
        הפער בין השרשראות נשמר בנפרד — פער גדול הוא בעצמו ממצא.
    (3) ודאות נמוכה נאמרת במפורש כדי שתטופל כנתון חסר, ולא תיקרא כרמה נמוכה
        — אחרת חור במאגר משבץ ילד לקבוצה חלשה מדי. */
-const SCHEMA_VERSION=2;
+const SCHEMA_VERSION=3;
+/* «באיזה סרגל נמדד הילד». המנוע הישן דיווח שליש-כיתה, החדש כיתה ועוד
+   שבר התחומים. דוח משני הסרגלים אינו בר-השוואה, וזה נאמר במפורש
+   בקובץ כדי שהשיבוץ לקבוצות לא ישווה בשקט מספרים שאינם ניתנים
+   להשוואה (החלטת שני: מי שכבר מופה נשאר כמו שהוא). */
+const LEVEL_SCALE="station_v1";
 const CONF_RANK={none:0,low:1,medium:2,high:3};
 function buildPlacement(){
   const out={};
@@ -1261,12 +1313,12 @@ function buildPlacement(){
       level_value:T.result.level_value,
       level_grade:T.result.boundary?T.result.boundary.grade:null,
       level_tag:T.result.boundary?T.result.boundary.tag:null,
-      level_within:T.result.boundary?T.result.boundary.level:null,
+      level_within:null,
       below_floor:T.result.below_floor, at_or_above_ceiling:T.result.at_or_above_ceiling,
       above_ceiling:T.result.above_ceiling,   // עבר שאלת בונוס מעל הכיתה — דגל, לא רמה
       confidence:T.result.confidence, end_reason:T.result.end_reason,
       questions:T.result.questions_asked, score:T.result.score,
-      floor_tag:T.result.below_floor?T.nodes[0].tag:null}));
+      floor_tag:T.result.below_floor?T.st[0].tag:null}));
     /* השרשרת הנמוכה קובעת את רמת המקצוע — משם השיעור חייב להתחיל. */
     const meas=rows.filter(r=>r.level_value!=null);
     /* הוודאות נמדדת רק על השרשראות שתרמו רמה. שרשרת שכלל לא נבדקה היא
@@ -1306,9 +1358,23 @@ function buildPlacement(){
     flags.push("incomplete_mapping");
   if(ev>=3) flags.push("fast_answers");            // חשד לניחושים שהצליחו
   if(slow>=2) flags.push("slow_answers");          // הפסקות או עזרה מבחוץ
-  return {schema_version:SCHEMA_VERSION, grade:session.grade, age:session.age||null,
+  return {schema_version:SCHEMA_VERSION, level_scale:LEVEL_SCALE, grade:session.grade, age:session.age||null,
           grade_source:(session.age&&gradeFromAge(session.age)!==session.grade)?"child_override":"age",
           subjects:out, flags};
+}
+/* נמדד בזמן הדוח ולא בזמן סגירת השרשרת: שאלות הפרופיל נשאלות **אחרי**
+   שהסולם נסגר, ולולא זה הן לא היו נספרות בפרופיל בכלל. */
+function threadAreas(T){
+  const m={};
+  session.answers.forEach(a=>{
+    if(a.thread!==T.cfg.id||!a.area||a.challenge||a.mode==="probe") return;
+    const A=m[a.area]||(m[a.area]={area:a.area,area_he:a.area_he||a.area,
+                                   asked:0,correct:0,top_grade:null,focus:[]});
+    A.asked++;
+    if(a.focus_he&&A.focus.indexOf(a.focus_he)<0) A.focus.push(a.focus_he);
+    if(a.correct){ A.correct++; if(A.top_grade==null||a.grade>A.top_grade) A.top_grade=a.grade; }
+  });
+  return Object.keys(m).map(k=>m[k]);
 }
 function buildReport(){
   /* שרשרת שלא הגיעה לגבול עד סוף המפגש נסגרת כ«נקטע», ולא כגבול ידע.
@@ -1322,7 +1388,7 @@ function buildReport(){
      ולא נעלם מהדוח — להורה חשוב לדעת שלא בדקנו, ולמה. */
   const covered=new Set(session.threads.map(T=>T.cfg.subject));
   const skipped=["hebrew","math","english"].filter(s=>!covered.has(s));
-  return {schema_version:SCHEMA_VERSION,
+  return {schema_version:SCHEMA_VERSION, level_scale:LEVEL_SCALE,
     placement:buildPlacement(),          // ← הפלט לשיבוץ לקבוצות (ראו buildPlacement)
     /* השם נכנס לדוח עצמו (ולא רק לשורת students בענן) כדי שקובץ ה-JSON
        המיוצא יידע של מי הוא — make_reports.py קורא בדיוק את student.name. */
@@ -1345,10 +1411,11 @@ function buildReport(){
        שה-session המקורי כבר לא קיים, בלי שום תלות בזיכרון של אותה הרצה. */
     knowledge_state:session.threads.map(T=>({thread:T.result.thread, name:T.result.name,
       emoji:T.cfg.emoji, subject:T.cfg.subject, subject_he:T.cfg.subject_he,
+      areas:threadAreas(T),
       assessed:T.result.nodes.some(n=>n.measured), above_ceiling:T.result.above_ceiling,
       score:T.result.score, questions_asked:T.result.questions_asked,
-      start_grade:rungNode(T,T.startRung).grade, start_tag:rungNode(T,T.startRung).tag,
-      start_level:rungLevel(T.startRung),
+      start_grade:T.st[T.startIdx].grade_to, start_tag:T.st[T.startIdx].tag,
+      start_level:null,
       topics:T.result.nodes})),
     diagnosed_misconceptions:session.diagnoses};
 }
@@ -1862,7 +1929,11 @@ $("againBtn").onclick=()=>{
    נשמר רק בין עולמות (נקודת מצב נקייה: אין מיקום שחקן, אין קוביות באוויר).
    מפגש של 3 מקצועות ארוך מדי לישיבה אחת — הילד יכול לעצור אחרי כל מקצוע
    ולחזור, והמנוע האדפטיבי ממשיך בדיוק מאותה מדרגה. */
-const SAVE_KEY="cq_save_v1";
+/* **המפתח עלה ל-v2 עם מנוע התחנות.** שמירה מהמנוע הישן נושאת מזהי שרשרת
+   שכבר אינם קיימים (numbers / heb_language), ו-resumeSession היה מדלג עליהם
+   בשקט: הילד/ה היה/תה חוזר/ת לעולם 5 עם סולמות שלא נמדדו, ומקבל/ת דוח
+   חצי-מדוד שנראה שלם. עדיף להתחיל מפגש חדש מאשר לייצר מדידה שקרית. */
+const SAVE_KEY="cq_save_v2";
 function buildSaveObj(){
   return {
     v:1, ts:Date.now(), age:session.age, grade:session.grade,
@@ -1873,7 +1944,7 @@ function buildSaveObj(){
     elapsed:Math.round((Date.now()-session.startTs)/1000),
     asked:session.asked, answers:session.answers, diagnoses:session.diagnoses,
     used:[...session.used],
-    threads:session.threads.map(T=>({id:T.cfg.id, rung:T.rung, startRung:T.startRung,
+    threads:session.threads.map(T=>({id:T.cfg.id, idx:T.idx, startIdx:T.startIdx, good:T.good, bad:T.bad, failStreak:T.failStreak,
       passed:[...T.passed], failed:[...T.failed], done:T.done, asked:T.asked,
       failStreak:T.failStreak||0, endReason:T.endReason||null,
       challenge:!!T.challenge, challengePassed:!!T.challengePassed, result:T.result})),
@@ -1908,7 +1979,8 @@ function resumeSession(sv){
   session.used=new Set(sv.used||[]); session.stars=sv.stars||0;
   (sv.threads||[]).forEach(t=>{
     const T=session.byId[t.id]; if(!T) return;
-    T.rung=t.rung; T.startRung=t.startRung;
+    T.idx=t.idx!=null?t.idx:T.idx; T.startIdx=t.startIdx!=null?t.startIdx:T.startIdx;
+    T.good=t.good||0; T.bad=t.bad||0; T.failStreak=t.failStreak||0;
     T.passed=new Set(t.passed||[]); T.failed=new Set(t.failed||[]);
     T.asked=t.asked||0; T.failStreak=t.failStreak||0; T.done=!!t.done; T.result=t.result||null;
     T.challenge=!!t.challenge; T.challengePassed=!!t.challengePassed;
@@ -2007,7 +2079,7 @@ $("startBtn").onclick=()=>{
   $("introOv").classList.add("hidden");
   state.running=true;
   const T=session.threads[0];
-  if(T) showToast(`מתחילים ב${T.cfg.name} — ${rungNode(T,T.rung).tag} 🎯`,2600);
+  if(T) showToast(`מתחילים ב${T.cfg.name} — ${curStation(T).tag} 🎯`,2600);
 };
 
 /* ---------- דוח המיפוי ---------- */
@@ -2141,9 +2213,19 @@ function questionGate(cube, grant, deny){
     P.lastAt=session.asked;
     return;
   }
-  const T=activeThread();
-  if(!T){ grant(); return; }                       // השרשרת של העולם מופתה — קובייה חופשית
-  const q=pickQuestionOrShift(T);
+  let T=activeThread();
+  /* בעולם הבונוס אין שרשרת משלו; אם נשארה שרשרת פתוחה — היא ממשיכה כאן. */
+  if(!T){ const o=ownThread(); if(o&&!o.done) T=o; }
+  if(!T){
+    /* השרשרת מופתה — במקום קובייה חופשית, שאלת פרופיל אם נשארה כזו. */
+    const own=ownThread(), pf=own?profileQuestion(own):null;
+    /* **הסדר קריטי**: openQuestion קורא ל-renderQuestion, שכבר קורא את
+       qUI.pfStation. אם הוא נקבע אחר כך, התווית מציגה את התחנה של העולם
+       הקודם — «כיתה ה׳» לילד/ה שנמצא/ת בכיתה ב׳. */
+    if(pf){ qUI.pfStation=pf.station; openQuestion("profile",pf.q,own,cube,grant,deny); return; }
+    grant(); return;
+  }
+  const q=pickQuestion(T);
   /* אזל המאגר — השרשרת נסגרת בלי שנמצא גבול ידע. זה **לא** ממצא על התלמיד,
      ולכן נרשם כסיבת סיום נפרדת ומוריד את דרגת הוודאות. */
   if(!q){ finishThread(T,"bank_exhausted"); grant(); return; }
@@ -2297,19 +2379,36 @@ function renderQuestion(q){
   const LEVEL_HE={1:"כניסה",2:"ליבה",3:"אתגר"};
   const P=session.probe;
   const cfg=qUI.mode==="probe"?P.cfg:T.cfg;
-  const node=qUI.mode==="probe"?P.nodes[P.idx]:rungNode(T,T.rung);
-  const L=qUI.mode==="probe"?P.level:rungLevel(T.rung);
+  /* בשאלת פרופיל התחנה אינה T.idx (הסולם כבר נסגר) אלא זו שממנה נשלפה. */
+  const node=qUI.mode==="profile"?T.st[qUI.pfStation]:curStation(T);
+  const L=q.level||2;
   const en=isEnglishQ(q);
   $("qOv").querySelector(".panel").classList.toggle("en",en);
   /* שאלת אתגר מסומנת כבונוס ומוותרת על תווית המדרגה: אין טעם לומר לילד
      כיתה ה׳ «כיתה ו׳» באמצע המשחק, והסימון מבהיר שאין מה להפסיד. */
-  const chal=qUI.mode!=="probe"&&T.challenge;
+  /* «שאלת בונוס» רק כשזו באמת שאלת האתגר. קודם התנאי היה «לא probe», ולכן
+     כל שאלות הפרופיל של מקצוע שהגיע לתקרה נצבעו כבונוס — והרמה שעליה הן
+     נשענות לא הוצגה כלל (משוב משחק, שני). */
+  const chal=qUI.mode==="thread"&&T.challenge;
+  /* התווית נעלמת רק כשהילד/ה נמצא/ת שתי כיתות או יותר מתחת לכיתתו/ה:
+     «כיתה א׳» על המסך של ילד בכיתה ה׳ אינו מידע אלא עקיצה. שלוש ולא
+     שתיים: כיתה אחת-שתיים מתחת עדיין נקראת כמשוב, לא כשיפוט. */
+  const deep=!!node&&!!session&&(session.grade-node.grade_to)>=3;
   $("qChips").innerHTML=
     `<span class="qchip accent">🧊 ${cfg.emoji||""} ${cfg.name}</span>`+
     (chal?`<span class="qchip">⭐ שאלת בונוס</span>`
-         :`<span class="qchip">${node.tag} · ${LEVEL_HE[L]}</span>`)+
+         :(deep||!node)?""
+         :`<span class="qchip">${node.tag}</span>`)+
     (qUI.mode==="probe"?`<span class="qchip">הצצה קטנה 👀</span>`:"")+
     (qUI.atBridge?`<span class="qchip">🌉 קובייה לגשר</span>`:"");
+  /* תרגיל במאונך: המאגר נושא שלוש שורות מוכנות (a / b / קו), והן מצוירות
+     בבלוק LTR ברוחב תו קבוע ולא כגזע בשורה אחת. זה מה שהילד/ה כותב/ת
+     במחברת, וזו הייתה בקשה מפורשת. `white-space:pre` שומר על היישור. */
+  if(q.vertical){
+    const v=q.vertical;
+    $("qStem").innerHTML='<span class="qask">חשבו:</span>'+
+      '<span class="vert">'+[v.a,v.b,v.rule].map(escHtml).join("\n")+'</span>';
+  } else
   $("qStem").innerHTML=en?fmtEnStem(q.stem):fmtMath(q.stem);
   /* אותו תנאי בדיוק שבו fmtEnStem מחזיר אי אחד: אין ולו אות עברית אחת. */
   $("qStem").classList.toggle("ltr",en&&!/[֐-׿]/.test(q.stem||""));
@@ -2379,21 +2478,27 @@ function finishAnswer(q,correct,given,diagnosis,skipped){
     P.asked++; if(correct) P.correct++;
     P.items.push({question_id:q.question_id, topic_id:q.topic_id,
       grade:P.nodes[P.idx].grade, level:P.level, correct});
-  }else{ T.asked++; }
+  }else if(qUI.mode==="profile"){
+    const w=state.stageIdx||0;
+    T.pfByWorld=T.pfByWorld||{}; T.pfByWorld[w]=(T.pfByWorld[w]||0)+1;
+  }
+  else{ T.asked++; }
   const opts=q.options||[];
   const textOf=k=>{const o=opts.find(x=>x.key===k);return o?o.text:(k==null?"":String(k));};
-  const node=probe?P.nodes[P.idx]:rungNode(T,T.rung);
+  const node=qUI.mode==="profile"?T.st[qUI.pfStation]:curStation(T);
   session.answers.push({question_id:q.question_id, mode:probe?"probe":"thread",
     thread:probe?P.cfg.id:T.cfg.id, topic_id:q.topic_id,
-    grade:node.grade, tag:node.tag,
-    level:probe?P.level:rungLevel(T.rung), rung:probe?null:T.rung,
+    grade:node?node.grade_to:null, tag:node?node.tag:null,
+    level:q.level||2, profile:qUI.mode==="profile",
+    station:qUI.mode==="profile"?null:T.idx, level_id:node?node.level_id:null,
+    slot:q.slot!=null?q.slot:null, focus_he:q.focus_he||null,
     correct, given, skipped:!!skipped, seconds:Math.round((Date.now()-qUI.qStart)/1000),
     /* ראיות שהיו חסרות ובלעדיהן אי אפשר לשקול את המסקנה:
        second_try — ענה נכון רק בניסיון השני (ידע חלקי, לא זהה לידע מלא)
        pool_left  — כמה שאלות נותרו במדרגה; 0 אומר שלא היה ממה לשאול שוב
        at_bridge  — נשאלה ליד הגשר, כשהילד בחר לענות כדי לקבל קובייה */
     second_try:probe?false:!!T.secondTry,
-    pool_left:probe?probePool().length:poolAt(T,T.rung).length,
+    pool_left:stationPool(T,curStation(T)).length,
     at_bridge:!!qUI.atBridge,
     challenge:probe?false:!!T.challenge,   // בונוס מעל התקרה — מחוץ למדידה
     /* תחום הליבה של השאלה — הציר שדוח המלווה מדבר בו («כפל וחילוק»,
@@ -2428,6 +2533,10 @@ function finishAnswer(q,correct,given,diagnosis,skipped){
    מחכה שאלה קלה יותר. שום דבר לא "אבד" — זה מה שהופך את הכישלון לרך. */
 function advance(correct){
   const T=qUI.T;
+  if(qUI.mode==="profile"){                          // שאלת פרופיל — לא משנה רמה
+    closeQuestion(true);
+    return;
+  }
   if(qUI.mode==="probe"){                           // בדיקה קצרה: 1–2 שאלות, אף פעם לא חוסמת
     const P=session.probe;
     if(correct){ P.done=true; P.passed=true; }
@@ -2437,7 +2546,11 @@ function advance(correct){
     return;
   }
   if(correct){
-    threadPass(T);
+    /* שאלת הבונוס מוכרעת בתשובה **אחת** ולא בשלוש — היא מסמנת «מעל התקרה»
+       ואינה מדידה. בלי היציאה המוקדמת היא נשאלה שלוש פעמים ברצף. */
+    if(T.challenge){ threadPass(T); closeQuestion(true); return; }
+    T.good++;
+    if(T.good>=GOOD_TO_PASS) threadPass(T);         // 3 נכונות → עולים כיתה
     closeQuestion(true);                            // תשובה נכונה → הקובייה נאספת
     return;
   }
@@ -2449,9 +2562,15 @@ function advance(correct){
     showToast("שאלת בונוס — אין בעיה. סיימנו למפות את העולם הזה 🎁",2600);
     return;
   }
-  const more=poolAt(T,T.rung).length>0;
-  if(!T.secondTry&&more){ T.secondTry=true; renderQuestion(pickQuestion(T)); return; }  // ניסיון שני באותה מדרגה
-  threadFail(T);                                    // ירידת מדרגה (או סיום השרשרת)
+  /* טעות ראשונה בתחנה — שאלה נוספת מאותה כיתה, לא יורדים.
+     טעות שנייה — יורדים. זה כלל 3/2 שהוחלט אחרי הסימולציה. */
+  T.bad++;
+  /* ממשיכים באותה תחנה כל עוד לא הצטברו 2 טעויות **וגם** לא נשאלו 3 שאלות. */
+  if((T.bad<BAD_TO_DROP||(T.good+T.bad)<MIN_AT_STATION)&&stationPool(T,curStation(T)).length){
+    renderQuestion(pickQuestion(T));
+    return;
+  }
+  threadFail(T);
   if(T.done){                                       // נמצא גבול הידע — הקובייה במתנה
     closeQuestion(true);
     showToast("סיימנו למפות את העולם הזה — הקובייה שלכם 🎁",2600);
@@ -2649,7 +2768,7 @@ function update(dt){
     if(!(d>-24&&d<90)){ b.hold=false; b.mode=null; } // התרחקנו מהגשר — הבחירה מתאפסת
     if(d>-24&&d<90&&p.onGround){
       if(state.cubes>=b.need) startBuild(b);
-      else if(session&&!b.hold&&state.time>=(b.coolT||0)&&(activeThread()||probeDue())){
+      else if(session&&!b.hold&&state.time>=(b.coolT||0)&&(activeThread()||probeDue()||(ownThread()&&profileQuestion(ownThread())))){
         if(b.mode==="question") bridgeQuestion(b);   // כבר בחרו לענות — ממשיכים ישר
         else bridgeChoice(b);                        // לחזור לאסוף או לענות?
       }
