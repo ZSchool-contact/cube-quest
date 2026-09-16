@@ -991,9 +991,11 @@ const SUBJ_EMOJI={hebrew:"📚",math:"🔢",english:"🔤"};
 
 /* ============================ מנוע התחנות ============================
    כיתה = תחנה אחת (ולא שלוש מדרגות). בתחנה שולפים שאלות מתוך השמונה של
-   אותה כיתה **לפי סדר העדיפות שבמפרט** — לא בהגרלה. שמונה השאלות פרוסות
-   על תחומי ליבה שונים, ולכן 3–4 שאלות בתחנה הן 3–4 תחומים, ופרופיל
-   התחומים נגזר מהחיפוש עצמו בלי שלב נפרד.
+   אותה כיתה **לפי סדר העדיפות שהבנייה קבעה** — לא בהגרלה. הסדר הזה מיוצר
+   ב-`spread_by_area` (build_game_core8.py) כך ששלוש השאלות המכריעות מכסות
+   שלושה תחומי ליבה שונים, ולכן פרופיל התחומים נגזר מהחיפוש עצמו בלי שלב
+   נפרד. **שלוש הראשונות הן שמכריעות**: נמדד שמשבצת 5 ומעלה היא 93%–100%
+   שאלת פרופיל, ולכן איכות הכיול שלהן היא שקובעת את הרמה.
 
    הכלל (החלטת שני, שיחה 13, אחרי סימולציה על המפגשים השמורים):
      3 נכונות בתחנה  → עולים כיתה
@@ -1091,7 +1093,12 @@ function threadPass(T){
          תשובה יחידה מקפיצה את maxPassed ומזכה בכיתה שלמה על תצפית אחת.
          הוא נספר כתשובה הראשונה מתוך שלוש, ותו לא. */
       T.good=1; T.bad=0;
-      if(T.chalSt&&stationPool(T,T.chalSt).length) return;   // ממשיכים
+      /* התנאי נבדק על **התחנה שזה עתה נוספה**, לא על תחנת הבונוס הבאה.
+         קודם נבדק T.chalSt, ולכן כשהתחנה שנוספה הייתה האחרונה בסולם
+         (chalSt יוצא null) השרשרת נסגרה מיד והילד/ה לא קיבל/ה בה אף
+         שאלה. התוצאה: אף אחד מלבד תלמיד/ת כיתה ט׳ לא יכול/ה היה
+         להימדד כיתה ט׳ — כל השאר נעצרו על 8 עם דגל «מעל התקרה». */
+      if(stationPool(T,curStation(T)).length) return;        // ממשיכים
     }
     finishThread(T,"above_ceiling"); return;
   }
@@ -1204,11 +1211,15 @@ function threadConfidence(ev,maxPassed,reason,belowFloor){
   if(!all.asked) return "none";
   if(reason==="bank_exhausted"||reason==="session_ended") return "low";
   if(all.no_retry) return "low";
+  /* **תוצאת רצפה אינה ממצא ודאי.** ילד/ה שלא שיתף/ה פעולה, ילד/ה שאינו/ה
+     קורא/ת, וילד/ה שבאמת נמצא/ת מתחת לכיתה א׳ מייצרים בדיוק את אותו דפוס:
+     שתי טעויות בתחנה הראשונה. קודם זה חזר "high", ולכן בעיית **איכות נתונים**
+     נקראה בשיבוץ כממצא ודאי על התלמיד/ה. נמדד: «תמיד שגוי» ו«ניחוש אקראי»
+     החזירו high ב-100% מהמפגשים. בלי אף תשובה נכונה בכל השרשרת לא נמדד כלום. */
+  if(belowFloor) return all.correct>0?"medium":"low";
   if(reason==="ceiling"||reason==="above_ceiling") return "medium";
   const above=ev[maxPassed+1];
-  const confirmed=belowFloor
-    ?(ev[0]&&(ev[0].asked-ev[0].correct)>=BAD_TO_DROP)
-    :(maxPassed>=0&&above&&(above.asked-above.correct)>=BAD_TO_DROP);
+  const confirmed=(maxPassed>=0&&above&&(above.asked-above.correct)>=BAD_TO_DROP);
   if(!confirmed) return "medium";
   return all.fast_correct?"medium":"high";
 }
@@ -1815,7 +1826,18 @@ function clearKeys(){
   try{ if(player){ player.jheld=false; player.jbuf=0; } }catch(e){}
   for(const id in touchPid) delete touchPid[id];
 }
+/* **מקלדת של המשחק מול מקלדת של טופס.** בלי ההחרגה הזאת כל הקלדה בשדה טקסט
+   נוסעת גם למשחק: הרווח נבלע ב-`preventDefault` והדמות קופצת במקומו, האותיות
+   a ו-d מזיזות אותה, r מבצע respawn ו-m משתיק. נצפה בפועל: שם ילד/ה שהוקלד
+   «בדיקה QA» נשמר כ«בדיקהQA» — כלומר כל שם עם רווח, וזה רוב השמות המלאים. */
+const typingInField=e=>{
+  const t=e.target;
+  if(!t) return false;
+  const tag=(t.tagName||"").toLowerCase();
+  return tag==="input"||tag==="textarea"||tag==="select"||!!t.isContentEditable;
+};
 window.addEventListener("keydown",e=>{
+  if(typingInField(e)) return;
   if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Spacebar"].includes(e.key)) e.preventDefault();
   if(e.repeat) return;
   const k=e.key.toLowerCase();
@@ -1826,6 +1848,9 @@ window.addEventListener("keydown",e=>{
   if(k==="r"&&state.running&&!state.flagHit) respawn(false);
 });
 window.addEventListener("keyup",e=>{
+  /* גם כאן: בלי ההחרגה, שחרור מקש בתוך שדה טקסט היה מגיע למשחק. מקש
+     שנשאר לחוץ בזמן מעבר פוקוס מנוקה ממילא ב-blur/focus/visibilitychange. */
+  if(typingInField(e)) return;
   const k=e.key.toLowerCase();
   if(e.key==="ArrowLeft"||k==="a") release("L");
   if(e.key==="ArrowRight"||k==="d") release("R");
