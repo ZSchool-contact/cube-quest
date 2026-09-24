@@ -36,7 +36,9 @@
   #hudBtns button:hover{background:rgba(29,43,69,.95);}
   #hudBtns button:focus-visible{outline:3px solid #FFD166;outline-offset:2px;}
   /* ---------- toast ---------- */
-  #toast{position:absolute;bottom:96px;right:0;left:0;display:flex;justify-content:center;pointer-events:none;}
+  #toast{position:absolute;bottom:96px;right:0;left:0;display:flex;justify-content:center;pointer-events:none;z-index:50;}
+  /* z-index: ה-toast קודם לחלונות ב-DOM, ובלי זה הם מציירים מעליו. «📊 הדוחות שלי» נראה
+     כאילו לא מגיב כשההודעה «עדיין אין דוח שמור» הוסתרה מאחורי מסך הפתיחה (24.9.26). */
   #toast span{background:rgba(29,43,69,.9);color:#FFF8EC;padding:10px 22px;border-radius:999px;font-size:18px;font-weight:700;
         opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;box-shadow:0 4px 14px rgba(20,30,50,.3);}
   #toast span.show{opacity:1;transform:translateY(0);}
