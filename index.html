@@ -166,6 +166,10 @@
         font:inherit;font-size:18px;font-weight:800;cursor:pointer;}
   .gradeBtn:hover{border-color:#7C5CFF;}
   .gradeBtn.sel{background:#7C5CFF;border-color:#7C5CFF;color:#fff;}
+  /* בחירת מקצוע — רק בגרסת «מקצוע אחד» (SUBJECT_PICK) */
+  #subjPick .grades{grid-template-columns:repeat(3,1fr);}
+  #subjPick .gradeBtn{font-size:17px;}
+  #subjPick .gradeBtn:disabled{opacity:.4;cursor:not-allowed;border-color:#E3D9C4;}
   .bigbtn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:0 6px 0 #5F45C9;}
   #ageEcho{font-size:15.5px;color:#3A4A66;min-height:24px;}
   #ageEcho b{color:#1D2B45;}
@@ -200,7 +204,7 @@
   .authSwitchRow{font-size:13px;color:#5A6B7C;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;}
   .authSwitchRow .linklike{font-size:13px;padding:0;}
   #authBox.hidden,#authLoggedOut.hidden,#authNeedsProfile.hidden,#authLoggedIn.hidden,
-  #authRecovery.hidden,#authForgot.hidden,#playGate.hidden,#kidPicker.hidden{display:none;}
+  #authRecovery.hidden,#authForgot.hidden,#playGate.hidden,#kidPicker.hidden,#subjPick.hidden{display:none;}
   #authWho{font-size:14px;color:#3A4A66;}
   #authLoggedIn{display:flex;flex-direction:column;align-items:stretch;gap:8px;}
   .authRow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
@@ -344,6 +348,10 @@
     <div class="worlds" id="worldsRow"></div>
     <div id="playGate">
       <button class="bigbtn" id="resumeBtn" style="display:none;background:#2EC4B6;box-shadow:0 6px 0 #1E8F86;">▶ להמשיך</button>
+      <div id="subjPick" class="hidden">
+        <p style="font-weight:800;">מה משחקים היום?</p>
+        <div class="grades" id="subjBtns"></div>
+      </div>
       <p style="font-weight:800;">בני כמה אתם?</p>
       <div class="grades" id="agePick"></div>
       <div id="ageEcho">בחרו גיל — ונתאים לכם את השאלות 🎯</div>
@@ -750,7 +758,10 @@ async function authPullLatest(){
     let q=sb.from("game_runs").select("id,state,updated_at")
       .eq("parent_id",authUser.id).eq("status","in_progress");
     if(studentId) q=q.eq("student_id",studentId);
-    const {data}=await q.order("updated_at",{ascending:false}).limit(1);
+    /* מסננים אחרי השליפה ולא ב-limit(1): ההרצה האחרונה עשויה להיות של
+       הגרסה האחרת (מלאה / מקצוע אחד), ואז היא אינה «להמשיך» כאן. */
+    const {data:rows}=await q.order("updated_at",{ascending:false}).limit(10);
+    const data=(rows||[]).filter(r=>saveFitsMode(r.state)).slice(0,1);
     let local=null;
     try{ const raw=localStorage.getItem(SAVE_KEY); local=raw?JSON.parse(raw):null; }catch(e){}
     if(data&&data.length){
@@ -990,6 +1001,17 @@ const AGE_MIN=6, AGE_MAX=15;                 // כיתה = גיל − 6 (א׳ ב
 const gradeFromAge=a=>Math.max(1,Math.min(9,a-5));
 const threadById=id=>GAME_DATA.threads.find(t=>t.id===id);
 const SUBJ_EMOJI={hebrew:"📚",math:"🔢",english:"🔤"};
+/* גרסת «מקצוע אחד»: הילד/ה בוחר/ת מקצוע ומשחק/ת רק את העולמות שלו, ואז
+   את עולם הבונוס. הדגל נקבע ב-<head> של הפריסה (`publish.py --single`);
+   בלעדיו המשחק זהה לגרסה המלאה. העולמות נשארים **אותם עולמות בדיוק**
+   (מתמטיקה = עולמות 3–5) — מספר הקוביות שונה בין העולמות, ולכן החלפת עולם
+   הייתה משנה את תקציב השאלות ואת המהימנות שנמדדה. */
+const SUBJECT_PICK=!!window.CQ_SUBJECT_PICK;
+const ALL_SUBJECTS=["hebrew","math","english"];
+let pickedSubject=null;
+/* שמירה של גרסה אחת אינה «להמשיך» בגרסה האחרת — שתיהן כותבות לאותה טבלת
+   game_runs, ומפגש של מקצוע אחד שנפתח במשחק המלא היה מסתיים בדוח חסר. */
+const saveFitsMode=o=>!!o&&(SUBJECT_PICK?ALL_SUBJECTS.includes(o.subject):!o.subject);
 
 /* ============================ מנוע התחנות ============================
    כיתה = תחנה אחת (ולא שלוש מדרגות). בתחנה שולפים שאלות מתוך השמונה של
@@ -1142,14 +1164,19 @@ function newProbe(cfg,grade){
 /* מסלול העולמות: לכל עולם שרשרת אחת, בסדר עברית → מתמטיקה → אנגלית, ועולם
    בונוס אחרון בלי שאלות. שרשרת שאין לה תוכן בכיתה הזאת (אנגלית בכיתות א׳–ב׳)
    מפילה את העולם שלה מהמסלול — הילד פשוט משחק 6 עולמות במקום 8. */
-function newSession(grade){
+function newSession(grade,subject){
   const stage=grade>=7?"middle":"elementary";
   /* מסלול אחד לשתי החטיבות: התחנות מסוננות ממילא לפי כיתת הילד/ה,
      ולכן אין צורך בשני מסלולים. */
-  const spec=(GAME_DATA.world_plan||[]).map(sub=>({thread:sub,probe:null}));
+  const spec=(GAME_DATA.world_plan||[]).map(sub=>({thread:sub,probe:null}))
+    /* מקצוע אחד: נשארים רק העולמות שלו ועולם הבונוס. `w` נשאר המיקום
+       המקורי, ולכן כל עולם נטען בדיוק כמו בגרסה המלאה. */
+    .map((s,i)=>Object.assign(s,{w:i}))
+    .filter(s=>!subject||!s.thread||s.thread===subject);
   const threads=[], byId={}, plan=[];
   let probeCfgId=null;
-  spec.forEach((s,i)=>{
+  spec.forEach(s=>{
+    const i=s.w;
     if(!s.thread){ plan.push({w:i,thread:null,probe:null,subject:null,subjectHe:null}); return; }
     if(!(s.thread in byId)){
       const T=newThread(threadById(s.thread),grade);
@@ -1162,7 +1189,7 @@ function newSession(grade){
     plan.push({w:i,thread:s.thread,probe:s.probe||null,
                subject:T.cfg.subject,subjectHe:T.cfg.subject_he});
   });
-  session={grade,age:pickedAge,stage,startTs:Date.now(),asked:0,answers:[],diagnoses:[],results:[],
+  session={grade,subject:subject||null,age:pickedAge,stage,startTs:Date.now(),asked:0,answers:[],diagnoses:[],results:[],
            used:new Set(),reportReady:false,threads,byId,plan,stars:0,starsTotal:plan.length,
            probe:null};
 }
@@ -1317,6 +1344,10 @@ function buildPlacement(){
   const out={};
   ["hebrew","math","english"].forEach(sub=>{
     const list=session.threads.filter(T=>T.cfg.subject===sub&&T.result);
+    if(session.subject&&sub!==session.subject){
+      out[sub]={assessed:false, confidence:"none", reason:"not_chosen"};
+      return;
+    }
     if(!list.length){
       out[sub]={assessed:false, confidence:"none",
                 reason:(sub==="english"&&session.grade<3)?"not_taught_yet":"not_mapped"};
@@ -1361,6 +1392,7 @@ function buildPlacement(){
   const slow=session.threads.filter(T=>T.result).reduce((s,T)=>s+(T.result.evidence.slow||0),0);
   Object.keys(out).forEach(sub=>{
     const p=out[sub];
+    if(p.reason==="not_chosen") return;              // לא נבחר — אין מה לסמן
     if(p.gap_grades!=null&&p.gap_grades<=-2) flags.push("below_grade:"+sub);
     if(p.gap_grades!=null&&p.gap_grades>=1) flags.push("above_grade:"+sub);
     if(p.spread>=2) flags.push("uneven:"+sub);       // פרופיל לא אחיד — קבוצה עלולה לא להתאים
@@ -1400,8 +1432,12 @@ function buildReport(){
   /* מקצוע שאין לו אף שרשרת (אנגלית בכיתות א׳–ב׳) מדווח מפורשות כ«טרם נלמד»
      ולא נעלם מהדוח — להורה חשוב לדעת שלא בדקנו, ולמה. */
   const covered=new Set(session.threads.map(T=>T.cfg.subject));
-  const skipped=["hebrew","math","english"].filter(s=>!covered.has(s));
+  const scope=session.subject?[session.subject]:ALL_SUBJECTS;
+  const skipped=scope.filter(s=>!covered.has(s));
   return {schema_version:SCHEMA_VERSION, level_scale:LEVEL_SCALE,
+    /* אילו מקצועות המפגש התכוון לבדוק. מקצוע מחוץ לטווח לא «לא נבדק» —
+       הוא לא נבחר, והדוחות משמיטים אותו (placement: reason="not_chosen"). */
+    subject_scope:scope,
     placement:buildPlacement(),          // ← הפלט לשיבוץ לקבוצות (ראו buildPlacement)
     /* השם נכנס לדוח עצמו (ולא רק לשורת students בענן) כדי שקובץ ה-JSON
        המיוצא יידע של מי הוא — make_reports.py קורא בדיוק את student.name. */
@@ -1964,6 +2000,7 @@ const SAVE_KEY="cq_save_v2";
 function buildSaveObj(){
   return {
     v:1, ts:Date.now(), age:session.age, grade:session.grade,
+    subject:session.subject||undefined,               // רק בגרסת «מקצוע אחד»
     runId:authRunId||null,                            // מזהה השורה בענן, אם מחוברים
     studentId:authStudentId||null,                    // של מי השמירה הזאת (אחים באותו מכשיר)
     stageIdx:state.stageIdx+1,                        // ממשיכים מהעולם הבא
@@ -1989,6 +2026,7 @@ function saveProgress(){
 function loadProgress(){
   try{ const s=localStorage.getItem(SAVE_KEY); const o=s?JSON.parse(s):null;
        if(!(o&&o.v===1&&o.grade)) return null;
+       if(!saveFitsMode(o)) return null;
        /* שמירה של אח/ות אחר/ת אינה «להמשיך» של הילד/ה הנוכחי/ת — בלי
           התנאי הזה הכיתה של הראשון נדבקה לשני. שמירה ישנה בלי studentId
           נחשבת שייכת (תאימות לאחור). */
@@ -1999,7 +2037,8 @@ function clearProgress(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 function resumeSession(sv){
   pickedAge=sv.age||null; pickedGrade=sv.grade;
   authRunId=sv.runId||null;
-  newSession(sv.grade);
+  pickedSubject=sv.subject||null;
+  newSession(sv.grade,pickedSubject);
   session.startTs=Date.now()-(sv.elapsed||0)*1000;
   session.asked=sv.asked||0;
   session.answers=sv.answers||[]; session.diagnoses=sv.diagnoses||[];
@@ -2042,7 +2081,8 @@ function refreshResumeBtn(){
   if(!btn) return;
   if(!sv){ btn.style.display="none"; return; }
   btn.style.display="";
-  btn.textContent=`▶ להמשיך מעולם ${(sv.stageIdx||0)+1} (כיתה ${GRADE_HE[sv.grade]})`;
+  const sh=sv.subject&&GAME_DATA.subject_he?GAME_DATA.subject_he[sv.subject]+" · ":"";
+  btn.textContent=`▶ להמשיך מעולם ${(sv.stageIdx||0)+1} (${sh}כיתה ${GRADE_HE[sv.grade]})`;
   btn.onclick=()=>{ ac(); resumeSession(sv); };
 }
 
@@ -2061,7 +2101,7 @@ $("worldsRow").innerHTML=WORLDS.map((w,i)=>`<span>${w.emoji} ${w.name}</span>`).
       $("gradeSel").value=String(pickedGrade);
       $("gradeFixRow").classList.remove("on");
       echoGrade();
-      $("startBtn").disabled=false;
+      syncStart();
     };
     pick.appendChild(b);
   }
@@ -2070,7 +2110,34 @@ $("worldsRow").innerHTML=WORLDS.map((w,i)=>`<span>${w.emoji} ${w.name}</span>`).
     const o=document.createElement("option"); o.value=String(g); o.textContent=GRADE_HE[g];
     sel.appendChild(o);
   }
-  sel.onchange=()=>{ pickedGrade=parseInt(sel.value,10); echoGrade(); };
+  sel.onchange=()=>{ pickedGrade=parseInt(sel.value,10); echoGrade(); syncStart(); };
+}
+/* בחירת מקצוע (גרסת «מקצוע אחד» בלבד). אנגלית נלמדת מכיתה ג׳, ולכן בכיתות
+   א׳–ב׳ הכפתור שלה כבוי — בלעדיו הילד/ה היה/תה יוצא/ת למסע של עולם בונוס בלבד. */
+if(SUBJECT_PICK){
+  $("subjPick").classList.remove("hidden");
+  /* רשימת שמונת העולמות מתארת את המסע המלא, ובטלפון היא דוחפת את
+     «יוצאים לדרך» אל מתחת לקצה המסך */
+  $("worldsRow").style.display="none";
+  const box=$("subjBtns");
+  ALL_SUBJECTS.forEach(sub=>{
+    const b=document.createElement("button");
+    b.className="gradeBtn"; b.type="button"; b.dataset.subject=sub;
+    b.textContent=GAME_DATA.subject_he&&GAME_DATA.subject_he[sub]||sub;
+    b.onclick=()=>{ pickedSubject=sub; syncStart(); };
+    box.appendChild(b);
+  });
+}
+function syncStart(){
+  if(SUBJECT_PICK){
+    if(pickedSubject==="english"&&pickedGrade&&pickedGrade<3) pickedSubject=null;
+    [...$("subjBtns").children].forEach(b=>{
+      b.classList.toggle("sel",b.dataset.subject===pickedSubject);
+      b.disabled=b.dataset.subject==="english"&&!!pickedGrade&&pickedGrade<3;
+    });
+  }
+  const st=$("startBtn");
+  if(st) st.disabled=!pickedGrade||(SUBJECT_PICK&&!pickedSubject);
 }
 function echoGrade(){
   const prev=Math.max(1,pickedGrade-1);
@@ -2079,7 +2146,9 @@ function echoGrade(){
     `אתם בכיתה <b>${GRADE_HE[pickedGrade]}</b> — מתחילים בשאלות של כיתה <b>${GRADE_HE[prev]}</b>`+
     `<span class="flavor">, קצת יותר קלות, וממשיכים לטפס 🚀</span> `+
     /* אנגלית נלמדת מכיתה ג' — עדיף לומר את זה מראש מאשר להשמיט עולמות בשקט */
-    (pickedGrade<3?`<br><small>באנגלית עוד לא מתחילים בכיתה ${GRADE_HE[pickedGrade]} — `+
+    (pickedGrade<3&&SUBJECT_PICK?`<br><small>אנגלית מתחילה בכיתה ג׳ — `+
+                   `אפשר לבחור עברית או מתמטיקה.</small> `:"")+
+    (pickedGrade<3&&!SUBJECT_PICK?`<br><small>באנגלית עוד לא מתחילים בכיתה ${GRADE_HE[pickedGrade]} — `+
                    `נשחק בעברית ובמתמטיקה.</small> `:"")+
     `<button class="linklike" type="button" id="gradeFix">לא בכיתה ${GRADE_HE[pickedGrade]}?</button>`;
   $("gradeFix").onclick=()=>$("gradeFixRow").classList.add("on");
@@ -2094,14 +2163,16 @@ function resetAgePick(){
   const echo=$("ageEcho");
   if(echo) echo.textContent="בחרו גיל — ונתאים לכם את השאלות 🎯";
   const fix=$("gradeFixRow"); if(fix) fix.classList.remove("on");
-  const st=$("startBtn"); if(st) st.disabled=true;
+  pickedSubject=null;
+  syncStart();
 }
 $("startBtn").onclick=()=>{
   if(!pickedGrade) return;
+  if(SUBJECT_PICK&&!pickedSubject) return;
   /* משחק חדש = שורת הרצה חדשה בענן. בלי האיפוס הזה, אח שני שהתחיל משחק
      דרס את ה-state של ההרצה של הראשון (authRunId נשאר מהמפגש הקודם). */
   ac(); clearProgress(); authRunId=null;
-  newSession(pickedGrade);
+  newSession(pickedGrade,SUBJECT_PICK?pickedSubject:null);
   initGame();
   $("introOv").classList.add("hidden");
   state.running=true;
@@ -2165,7 +2236,7 @@ function showReport(repArg){
            `${score}</div>${measured?bonus+nodes:'<div style="font-size:13px;color:#5A6B7C;">לא הספקנו לבדוק את הנושא הזה במפגש.</div>'}</div>`;
   };
   /* מקובץ לפי מקצוע, בסדר המשחק: עברית → מתמטיקה → אנגלית */
-  const SUBJ_ORDER=["hebrew","math","english"];
+  const SUBJ_ORDER=rep.subject_scope||ALL_SUBJECTS;
   const SUBJ_NAME={hebrew:"עברית",math:"מתמטיקה",english:"אנגלית"};
   const threads=SUBJ_ORDER.map(sub=>{
     const list=rep.knowledge_state.filter(k=>k.subject===sub);
